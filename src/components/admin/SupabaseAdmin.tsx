@@ -1,24 +1,26 @@
 'use client';
-
-import { useState } from 'react';
+// Removido: import no usado
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import Button from '@/components/ui/Button';
-import { supabase } from '@/services/supabase/client';
 import toast from 'react-hot-toast';
 
-const supabaseUrl = "https://mwzdohmphqosxfzxqakp.supabase.co";
-const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13emRvaG1waHFvc3hmenhxYWtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MDE1MjAsImV4cCI6MjA2NzQ3NzUyMH0.9j0oorHPcsBg6GEpX3CF4dUDKI9tYxdW5ieVpQ3K6yU";
+const supabase = createClient(
+  "https://mwzdohmphqosxfzxqakp.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13emRvaG1waHFvc3hmenhxYWtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MDE1MjAsImV4cCI6MjA2NzQ3NzUyMH0.9j0oorHPcsBg6GEpX3CF4dUDKI9tYxdW5ieVpQ3K6yU"
+);
 
 export default function SupabaseAdmin() {
   const [connectionStatus, setConnectionStatus] = useState<string>('');
   const [buckets, setBuckets] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [tables, setTables] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const testConnection = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('ws_profiles').select('count').limit(1);
+      const { data, error } = await supabase.from('ws_users').select('count').limit(1);
       
       if (error) {
         setConnectionStatus('Error: ' + error.message);
@@ -27,7 +29,7 @@ export default function SupabaseAdmin() {
         setConnectionStatus('Conexión exitosa');
         toast.success('Conexión exitosa');
       }
-    } catch (error) {
+    } catch {
       setConnectionStatus('Error de conexión');
       toast.error('Error de conexión');
     } finally {
@@ -46,7 +48,7 @@ export default function SupabaseAdmin() {
         setBuckets(data || []);
         toast.success('Buckets listados correctamente');
       }
-    } catch (error) {
+    } catch {
       toast.error('Error al listar buckets');
     } finally {
       setLoading(false);
@@ -66,7 +68,7 @@ export default function SupabaseAdmin() {
         toast.success('Bucket creado correctamente');
         listBuckets(); // Refresh list
       }
-    } catch (error) {
+    } catch {
       toast.error('Error al crear bucket');
     } finally {
       setLoading(false);
@@ -84,7 +86,7 @@ export default function SupabaseAdmin() {
         toast.success('Bucket eliminado correctamente');
         listBuckets(); // Refresh list
       }
-    } catch (error) {
+    } catch {
       toast.error('Error al eliminar bucket');
     } finally {
       setLoading(false);
@@ -94,19 +96,19 @@ export default function SupabaseAdmin() {
   const checkTables = async () => {
     setLoading(true);
     try {
-      // Verificar si existe la tabla ws_profiles
+      // Verificar si existe la tabla ws_users
       const { data: profilesData, error: profilesError } = await supabase
-        .from('ws_profiles')
+        .from('ws_users')
         .select('*')
         .limit(1);
 
       if (profilesError) {
-        console.error('Error checking ws_profiles table:', profilesError);
-        toast.error('Tabla ws_profiles no existe o no es accesible');
+        console.error('Error checking ws_users table:', profilesError);
+        toast.error('Tabla ws_users no existe o no es accesible');
         setTables([]);
       } else {
-        toast.success('Tabla ws_profiles existe');
-        setTables(['ws_profiles']);
+        toast.success('Tabla ws_users existe');
+        setTables(['ws_users']);
       }
     } catch (error) {
       console.error('Error checking tables:', error);
@@ -121,7 +123,7 @@ export default function SupabaseAdmin() {
     try {
       // Intentar crear un registro de prueba
       const { data, error } = await supabase
-        .from('ws_profiles')
+        .from('ws_users')
         .insert([{
           name: 'Test User',
           email: 'test@example.com',
@@ -133,18 +135,18 @@ export default function SupabaseAdmin() {
         console.error('Error creating test profile:', error);
         toast.error('Error al crear perfil de prueba: ' + error.message);
       } else {
-        toast.success('Tabla ws_profiles funciona correctamente');
+        toast.success('Tabla ws_users funciona correctamente');
         // Eliminar el registro de prueba
         if (data && data[0]) {
           await supabase
-            .from('ws_profiles')
+            .from('ws_users')
             .delete()
             .eq('email', 'test@example.com');
         }
       }
     } catch (error) {
       console.error('Error in createProfilesTable:', error);
-      toast.error('Error al probar la tabla ws_profiles');
+      toast.error('Error al probar la tabla ws_users');
     } finally {
       setLoading(false);
     }
@@ -186,7 +188,7 @@ export default function SupabaseAdmin() {
               disabled={loading}
               variant="outline"
             >
-              Probar Tabla ws_profiles
+              Probar Tabla ws_users
             </Button>
           </div>
           
@@ -250,8 +252,8 @@ export default function SupabaseAdmin() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm">
-            <p><strong>URL:</strong> {supabaseUrl}</p>
-            <p><strong>Anon Key:</strong> {supabaseAnonKey.substring(0, 20)}...</p>
+            <p><strong>URL:</strong> https://mwzdohmphqosxfzxqakp.supabase.co</p>
+            <p><strong>Anon Key:</strong> eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...</p>
           </div>
         </CardContent>
       </Card>

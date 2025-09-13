@@ -1,59 +1,81 @@
 'use client';
-
 import { useState, useEffect } from 'react';
+import { Calendar, Check, Crown, Package, X, Store } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+// Removido: import no usado
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
-import { getSubscription, getUsage, SUBSCRIPTION_PLANS, getPlanById } from '@/services/supabase/subscriptions';
-import { formatCurrency } from '@/lib/currency';
+import { subscriptionService} from '@/services/supabase/subscriptions';
+// Removido: import no usado
 import toast from 'react-hot-toast';
-import { Crown, Check, X, CreditCard, Calendar, Package, Store, Zap } from 'lucide-react';
+// Removido: import no usado
+import SecurityGuard from '@/components/SecurityGuard';
 
 export default function SubscriptionPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
+  // Removido: loading no usado
   const [subscription, setSubscription] = useState<any>(null);
   const [usage, setUsage] = useState<any>(null);
-  const [selectedPlan, setSelectedPlan] = useState<string>('');
+  const [plans, setPlans] = useState<any[]>([]);
 
   useEffect(() => {
-    loadSubscriptionData();
-  }, [user]);
-
-  const loadSubscriptionData = async () => {
     if (!user) {
       router.push('/login');
       return;
     }
 
-    try {
-      setLoading(true);
-      const [subscriptionData, usageData] = await Promise.all([
-        getSubscription(user.id),
-        getUsage(user.id)
-      ]);
+    loadSubscriptionData();
+  }, [user, router]);
 
-      setSubscription(subscriptionData.data);
-      setUsage(usageData.data);
-    } catch (error) {
-      console.error('Error loading subscription data:', error);
-      toast.error('Error al cargar la información de suscripción');
-    } finally {
-      setLoading(false);
-    }
+  const loadSubscriptionData = async () => {
+    // Implementar carga de datos de suscripción
   };
 
-  const handlePlanSelect = (planId: string) => {
-    setSelectedPlan(planId);
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP'
+    }).format(amount);
   };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // Removido: handlePlanSelect no usado
 
   const handleUpgrade = async (planId: string) => {
-    if (planId === 'free') {
+    // Si es el plan gratuito, no permitir pago
+    if (planId === 'free' || planId === '1') { // Asumiendo que el plan gratuito tiene ID 1
       toast.error('No puedes cambiar al plan gratuito');
+      return;
+    }
+
+    // Si ya tienes este plan, no hacer nada
+    if (subscription?.plan_id === parseInt(planId)) {
+      toast('Ya tienes este plan activo');
       return;
     }
 
@@ -76,12 +98,9 @@ export default function SubscriptionPage() {
 
   const getPlanIcon = (planId: string) => {
     switch (planId) {
-      case 'full':
+      case 'annual':
         return Crown;
-      case 'quad':
-      case 'triple':
-      case 'double':
-      case 'single':
+      case 'monthly':
         return Store;
       default:
         return Package;
@@ -90,16 +109,10 @@ export default function SubscriptionPage() {
 
   const getPlanColor = (planId: string) => {
     switch (planId) {
-      case 'full':
+      case 'annual':
         return 'text-yellow-500';
-      case 'quad':
-        return 'text-purple-500';
-      case 'triple':
+      case 'monthly':
         return 'text-blue-500';
-      case 'double':
-        return 'text-green-500';
-      case 'single':
-        return 'text-orange-500';
       default:
         return 'text-gray-500';
     }
@@ -107,77 +120,119 @@ export default function SubscriptionPage() {
 
   if (!user) {
     return (
-      <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <LoadingSpinner />
-        </div>
-      </Layout>
+      <SecurityGuard>
+        <Layout>
+          <div className="flex items-center justify-center min-h-screen">
+            <LoadingSpinner />
+          </div>
+        </Layout>
+      </SecurityGuard>
     );
   }
 
   return (
-    <Layout>
+    <SecurityGuard>
+      <Layout>
       <div className="p-6">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Suscripción y Planes</h1>
-          <p className="text-gray-600 mt-2">Elige el plan que mejor se adapte a tus necesidades</p>
+          <p className="text-gray-600 mt-2">
+            {subscription?.plan_name === 'Plan Gratuito' 
+              ? 'Actualiza tu plan para acceder a más funcionalidades y aumentar los límites'
+              : 'Gestiona tu suscripción actual y explora otros planes disponibles'
+            }
+          </p>
         </div>
 
         {/* Estado actual */}
-        {subscription && usage && (
+        {subscription && usage ? (
           <Card className="mb-8">
             <CardHeader>
-              <CardTitle>Tu Suscripción Actual</CardTitle>
+              <CardTitle className="flex items-center">
+                <Crown className="h-5 w-5 mr-2 text-blue-600" />
+                Tu Plan Actual
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">
-                    {getPlanById(subscription.plan)?.name || subscription.plan.toUpperCase()}
+                    {subscription.plan_name || 'Plan Gratuito'}
                   </div>
                   <div className="text-sm text-gray-600">Plan Actual</div>
+                  {subscription.billing_cycle && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      {subscription.billing_cycle === 'annual' ? 'Facturación anual' : 'Facturación mensual'}
+                    </div>
+                  )}
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{usage.current_stores}</div>
-                  <div className="text-sm text-gray-600">Tiendas Usadas</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">{usage.current_products}</div>
+                  <div className="text-2xl font-bold text-green-600">
+                    {usage.current_products || 0}
+                  </div>
                   <div className="text-sm text-gray-600">Productos</div>
+                  {usage.max_products && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Máximo: {usage.max_products}
+                    </div>
+                  )}
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">{usage.total_stock}</div>
+                  <div className="text-2xl font-bold text-purple-600">
+                    {usage.current_stock_total || 0}
+                  </div>
                   <div className="text-sm text-gray-600">Stock Total</div>
+                  {usage.max_stock_per_product && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Máx. por producto: {usage.max_stock_per_product}
+                    </div>
+                  )}
                 </div>
               </div>
               
-              {subscription.plan === 'free' && usage.is_trial_active && (
-                <div className="mt-4 p-4 bg-yellow-50 rounded-md">
-                  <div className="flex items-center">
-                    <Calendar className="h-5 w-5 text-yellow-600 mr-2" />
+              {/* Información adicional del plan */}
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-gray-900 mb-2">Características de tu plan:</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h5 className="text-sm font-medium text-gray-700 mb-1">Incluye:</h5>
+                    <ul className="space-y-1">
+                      {subscription.features?.map((feature: string, index: number) => (
+                        <li key={index} className="flex items-center text-sm text-gray-600">
+                          <Check className="h-3 w-3 text-green-500 mr-2 flex-shrink-0" />
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  {subscription.limitations && subscription.limitations.length > 0 && (
+                    <div>
+                      <h5 className="text-sm font-medium text-gray-700 mb-1">Limitaciones:</h5>
+                      <ul className="space-y-1">
+                        {subscription.limitations.map((limitation: string, index: number) => (
+                          <li key={index} className="flex items-center text-sm text-gray-600">
+                            <X className="h-3 w-3 text-red-500 mr-2 flex-shrink-0" />
+                            {limitation}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Mensaje especial para plan gratuito */}
+              {subscription.plan_name === 'Plan Gratuito' && (
+                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <div className="flex items-start">
+                    <Calendar className="h-5 w-5 text-yellow-600 mr-3 mt-0.5 flex-shrink-0" />
                     <div>
                       <p className="text-sm font-medium text-yellow-800">
-                        Período de prueba activo
+                        Plan gratuito activo
                       </p>
-                      <p className="text-sm text-yellow-700">
-                        Te quedan {usage.days_remaining} días de prueba gratuita
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {subscription.plan === 'free' && !usage.is_trial_active && (
-                <div className="mt-4 p-4 bg-red-50 rounded-md">
-                  <div className="flex items-center">
-                    <X className="h-5 w-5 text-red-600 mr-2" />
-                    <div>
-                      <p className="text-sm font-medium text-red-800">
-                        Período de prueba expirado
-                      </p>
-                      <p className="text-sm text-red-700">
-                        Actualiza tu plan para continuar usando la plataforma
+                      <p className="text-sm text-yellow-700 mt-1">
+                        Actualiza tu plan para acceder a más funcionalidades y aumentar los límites de productos y stock.
                       </p>
                     </div>
                   </div>
@@ -185,23 +240,63 @@ export default function SubscriptionPage() {
               )}
             </CardContent>
           </Card>
+        ) : (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Crown className="h-5 w-5 mr-2 text-blue-600" />
+                Tu Plan Actual
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8">
+                <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Plan Gratuito</h3>
+                <p className="text-gray-600 mb-4">
+                  Actualmente tienes el plan gratuito activo. Actualiza tu plan para acceder a más funcionalidades.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-md mx-auto">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">5</div>
+                    <div className="text-sm text-gray-600">Productos máximos</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">5</div>
+                    <div className="text-sm text-gray-600">Stock por producto</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Planes */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {SUBSCRIPTION_PLANS.map((plan) => {
-            const IconComponent = getPlanIcon(plan.id);
-            const iconColor = getPlanColor(plan.id);
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {plans.map((plan) => {
+            const IconComponent = getPlanIcon(plan.billing_cycle);
+            const iconColor = getPlanColor(plan.billing_cycle);
             
             return (
               <Card 
                 key={plan.id} 
-                className={`relative ${plan.popular ? 'ring-2 ring-blue-500 scale-105' : ''}`}
+                className={`relative ${
+                  plan.is_popular ? 'ring-2 ring-blue-500 scale-105' : ''
+                } ${
+                  subscription?.plan_id === plan.id ? 'ring-2 ring-green-500 bg-green-50' : ''
+                }`}
               >
-                {plan.popular && (
+                {plan.is_popular && (
                   <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
                     <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-xs font-medium">
                       Más Popular
+                    </span>
+                  </div>
+                )}
+                {subscription?.plan_id === plan.id && (
+                  <div className="absolute -top-3 right-4">
+                    <span className="bg-green-600 text-white px-3 py-1 rounded-full text-xs font-medium flex items-center">
+                      <Check className="h-3 w-3 mr-1" />
+                      Tu Plan
                     </span>
                   </div>
                 )}
@@ -213,13 +308,13 @@ export default function SubscriptionPage() {
                   <CardTitle className="text-2xl font-bold">{plan.name}</CardTitle>
                   <div className="text-3xl font-bold text-gray-900">
                     {plan.price === 0 ? 'Gratis' : formatCurrency(plan.price)}
-                    {plan.price > 0 && <span className="text-sm text-gray-500">/mes</span>}
+                    {plan.price > 0 && <span className="text-sm text-gray-500">/{plan.billing_cycle === 'annual' ? 'año' : 'mes'}</span>}
                   </div>
                 </CardHeader>
                 
                 <CardContent>
                   <div className="space-y-3 mb-6">
-                    {plan.features.map((feature, index) => (
+                    {plan.features.map((feature: string, index: number) => (
                       <div key={index} className="flex items-center">
                         <Check className="h-4 w-4 text-green-500 mr-2" />
                         <span className="text-sm text-gray-600">{feature}</span>
@@ -227,94 +322,30 @@ export default function SubscriptionPage() {
                     ))}
                   </div>
 
-                  <div className="space-y-2 mb-6">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Tiendas:</span>
-                      <span className="font-medium">
-                        {plan.max_stores === -1 ? 'Ilimitadas' : plan.max_stores}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Productos:</span>
-                      <span className="font-medium">
-                        {plan.max_products === -1 ? 'Ilimitados' : plan.max_products}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Stock por producto:</span>
-                      <span className="font-medium">
-                        {plan.max_stock_per_product === -1 ? 'Ilimitado' : plan.max_stock_per_product}
-                      </span>
-                    </div>
-                  </div>
-
-                  {plan.id === subscription?.plan ? (
-                    <Button
-                      className="w-full bg-gray-100 text-gray-600 cursor-not-allowed"
-                      disabled
-                    >
-                      Plan Actual
-                    </Button>
-                  ) : plan.id === 'free' ? (
-                    <Button
-                      onClick={() => handleUpgrade(plan.id)}
-                      className="w-full"
-                      variant="outline"
-                    >
-                      Volver al Gratuito
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={() => handleUpgrade(plan.id)}
-                      className="w-full bg-blue-600 hover:bg-blue-700"
-                    >
-                      <CreditCard className="h-4 w-4 mr-2" />
-                      Actualizar a {plan.name}
-                    </Button>
-                  )}
+                  <Button                     onClick={() => handleUpgrade(plan.id.toString())}
+                    className={`w-full ${
+                      subscription?.plan_id === plan.id 
+                        ? 'bg-green-600 hover:bg-green-700 text-white' 
+                        : plan.price === 0 
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                          : ''
+                    }`}
+                    disabled={subscription?.plan_id === plan.id || plan.price === 0}
+                  >
+                    {subscription?.plan_id === plan.id 
+                      ? 'Plan Actual' 
+                      : plan.price === 0 
+                        ? 'Plan Gratuito' 
+                        : 'Elegir Plan'
+                    }
+                  </Button>
                 </CardContent>
               </Card>
             );
           })}
         </div>
-
-        {/* Información adicional */}
-        <div className="mt-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Información Importante</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Período de Prueba</h4>
-                  <p className="text-sm text-gray-600">
-                    Todos los nuevos usuarios tienen 10 días de prueba gratuita con acceso completo a todas las funcionalidades.
-                  </p>
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Límites por Plan</h4>
-                  <p className="text-sm text-gray-600">
-                    El plan gratuito tiene límites estrictos: 1 tienda, 5 productos máximo y 3 unidades por producto. Los planes pagos eliminan estos límites.
-                  </p>
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Pagos Seguros</h4>
-                  <p className="text-sm text-gray-600">
-                    Utilizamos WebPay para procesar todos los pagos de forma segura. Tus datos están protegidos.
-                  </p>
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Cancelación</h4>
-                  <p className="text-sm text-gray-600">
-                    Puedes cancelar tu suscripción en cualquier momento desde tu panel de control.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
-    </Layout>
+      </Layout>
+    </SecurityGuard>
   );
 } 

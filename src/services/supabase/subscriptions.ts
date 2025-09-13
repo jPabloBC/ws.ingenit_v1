@@ -1,368 +1,487 @@
-import { supabase } from './client';
+import { supabaseAdmin as supabase } from './admin';
 
-export interface Subscription {
-  id: string;
-  user_id: string;
-  plan: 'free' | 'single' | 'double' | 'triple' | 'quad' | 'full';
-  status: 'active' | 'inactive' | 'cancelled';
-  max_stores: number;
-  max_products: number;
-  max_stock_per_product: number;
-  trial_days: number;
-  trial_end_date: string;
+// =====================================================
+// TIPOS DE DATOS PARA SUSCRIPCIONES
+// =====================================================
+
+export interface Plan {
+  id: number;
+  name: string;
+  description: string;
+  price: number;
+  billing_cycle: 'monthly' | 'annual';
+  max_products: number | null;
+  max_stock_per_product: number | null;
+  features: string[];
+  limitations: string[];
+  is_popular: boolean;
+  discount_percentage: number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
 
-export interface Usage {
+export interface Subscription {
+  id: number;
+  user_id: string;
+  plan_id: number;
+  status: 'active' | 'cancelled' | 'expired' | 'pending';
+  start_date: string;
+  end_date: string | null;
+  next_billing_date: string | null;
+  payment_method: string | null;
+  payment_status: 'pending' | 'completed' | 'failed' | 'refunded';
+  amount_paid: number | null;
+  currency: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UsageLimits {
+  id: string;
+  user_id: string;
   current_stores: number;
   current_products: number;
   total_stock: number;
-  days_remaining: number;
-  is_trial_active: boolean;
+  last_updated: string;
 }
 
-export interface Plan {
-  id: string;
-  name: string;
-  price: number;
-  max_stores: number;
-  max_products: number;
-  max_stock_per_product: number;
+export interface PaymentHistory {
+  id: number;
+  subscription_id: number;
+  amount: number;
+  currency: string;
+  payment_method: string | null;
+  transaction_id: string | null;
+  status: 'pending' | 'completed' | 'failed' | 'refunded';
+  payment_date: string;
+  created_at: string;
+}
+
+export interface UserCurrentPlan {
+  plan_id: number;
+  plan_name: string;
+  plan_price: number;
+  billing_cycle: string;
+  max_products: number | null;
+  max_stock_per_product: number | null;
   features: string[];
-  popular?: boolean;
+  limitations: string[];
+  subscription_status: string;
+  next_billing_date: string | null;
 }
 
-// Definición de planes según los requerimientos
-export const SUBSCRIPTION_PLANS: Plan[] = [
-  {
-    id: 'free',
-    name: 'Gratuito',
-    price: 0,
-    max_stores: 1,
-    max_products: 5,
-    max_stock_per_product: 3,
-    features: [
-      '1 tipo de negocio',
-      '5 productos máximo',
-      '3 unidades máximo por producto',
-      '10 días de prueba',
-      'Funcionalidades básicas'
-    ]
-  },
-  {
-    id: 'single',
-    name: 'Single Store',
-    price: 10000,
-    max_stores: 1,
-    max_products: -1, // Sin límite
-    max_stock_per_product: -1, // Sin límite
-    features: [
-      '1 tipo de negocio',
-      'Productos ilimitados',
-      'Stock ilimitado',
-      'Todas las funcionalidades',
-      'Soporte por email'
-    ]
-  },
-  {
-    id: 'double',
-    name: 'Double Store',
-    price: 15000,
-    max_stores: 2,
-    max_products: -1,
-    max_stock_per_product: -1,
-    features: [
-      '2 tipos de negocio',
-      'Productos ilimitados',
-      'Stock ilimitado',
-      'Todas las funcionalidades',
-      'Soporte por email'
-    ]
-  },
-  {
-    id: 'triple',
-    name: 'Triple Store',
-    price: 18000,
-    max_stores: 3,
-    max_products: -1,
-    max_stock_per_product: -1,
-    features: [
-      '3 tipos de negocio',
-      'Productos ilimitados',
-      'Stock ilimitado',
-      'Todas las funcionalidades',
-      'Soporte prioritario'
-    ]
-  },
-  {
-    id: 'quad',
-    name: 'Quad Store',
-    price: 22000,
-    max_stores: 4,
-    max_products: -1,
-    max_stock_per_product: -1,
-    features: [
-      '4 tipos de negocio',
-      'Productos ilimitados',
-      'Stock ilimitado',
-      'Todas las funcionalidades',
-      'Soporte prioritario',
-      'Reportes avanzados'
-    ]
-  },
-  {
-    id: 'full',
-    name: 'Full Access',
-    price: 25000,
-    max_stores: -1, // Sin límite
-    max_products: -1,
-    max_stock_per_product: -1,
-    popular: true,
-    features: [
-      'Todos los tipos de negocio',
-      'Productos ilimitados',
-      'Stock ilimitado',
-      'Todas las funcionalidades',
-      'Soporte prioritario',
-      'Reportes avanzados',
-      'Integración con WebPay'
-    ]
-  }
-];
+export interface UserLimits {
+  can_add_product: boolean;
+  can_add_stock: boolean;
+  current_products: number;
+  current_stock_total: number;
+  max_products: number | null;
+  max_stock_per_product: number | null;
+}
 
-// Crear suscripción gratuita para un usuario
-export const createFreeSubscription = async (userId: string) => {
-  try {
+// =====================================================
+// SERVICIO DE PLANES
+// =====================================================
+
+export const plansService = {
+  // Obtener todos los planes activos
+  async getAllPlans(): Promise<Plan[]> {
+    const { data, error } = await supabase
+      .from('ws_plans')
+      .select('*')
+      .eq('is_active', true)
+      .order('price', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching plans:', error);
+      throw new Error('Error al obtener los planes');
+    }
+
+    return data || [];
+  },
+
+  // Obtener un plan específico por ID
+  async getPlanById(planId: number): Promise<Plan | null> {
+    const { data, error } = await supabase
+      .from('ws_plans')
+      .select('*')
+      .eq('id', planId)
+      .eq('is_active', true)
+      .single();
+
+    if (error) {
+      console.error('Error fetching plan:', error);
+      return null;
+    }
+
+    return data;
+  },
+
+  // Obtener el plan gratuito
+  async getFreePlan(): Promise<Plan | null> {
+    const { data, error } = await supabase
+      .from('ws_plans')
+      .select('*')
+      .eq('price', 0)
+      .eq('is_active', true)
+      .single();
+
+    if (error) {
+      console.error('Error fetching free plan:', error);
+      return null;
+    }
+
+    return data;
+  },
+
+  // Obtener el plan más popular
+  async getPopularPlan(): Promise<Plan | null> {
+    const { data, error } = await supabase
+      .from('ws_plans')
+      .select('*')
+      .eq('is_popular', true)
+      .eq('is_active', true)
+      .single();
+
+    if (error) {
+      console.error('Error fetching popular plan:', error);
+      return null;
+    }
+
+    return data;
+  }
+};
+
+// =====================================================
+// SERVICIO DE SUSCRIPCIONES
+// =====================================================
+
+export const subscriptionService = {
+  // Obtener la suscripción actual del usuario
+  async getCurrentSubscription(userId: string): Promise<Subscription | null> {
+    const { data, error } = await supabase
+      .from('ws_subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching current subscription:', error);
+      return null;
+    }
+
+    return data;
+  },
+
+  // Obtener el plan actual del usuario con información completa
+  async getCurrentUserPlan(userId: string): Promise<UserCurrentPlan | null> {
+    const { data, error } = await supabase
+      .rpc('get_user_current_plan', { user_uuid: userId });
+
+    if (error) {
+      console.error('Error fetching user current plan:', error);
+      return null;
+    }
+
+    return data?.[0] || null;
+  },
+
+  // Crear una nueva suscripción
+  async createSubscription(
+    userId: string,
+    planId: number,
+    paymentMethod?: string
+  ): Promise<Subscription | null> {
+    const plan = await plansService.getPlanById(planId);
+    if (!plan) {
+      throw new Error('Plan no encontrado');
+    }
+
+    // Calcular fechas
+    const startDate = new Date();
+    const endDate = plan.billing_cycle === 'annual' 
+      ? new Date(startDate.getFullYear() + 1, startDate.getMonth(), startDate.getDate())
+      : new Date(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate());
+
     const { data, error } = await supabase
       .from('ws_subscriptions')
       .insert({
         user_id: userId,
-        plan: 'free',
-        status: 'active',
-        max_stores: 1,
-        max_products: 5,
-        max_stock_per_product: 3,
-        trial_days: 10,
-        trial_end_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(), // 10 días
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        plan_id: planId,
+        status: 'pending',
+        start_date: startDate.toISOString(),
+        end_date: endDate.toISOString(),
+        next_billing_date: endDate.toISOString(),
+        payment_method: paymentMethod,
+        payment_status: 'pending',
+        amount_paid: plan.price,
+        currency: 'CLP'
       })
       .select()
       .single();
 
     if (error) {
-      console.error('Error creating free subscription:', error);
-      return { data: null, error };
+      console.error('Error creating subscription:', error);
+      throw new Error('Error al crear la suscripción');
     }
 
-    return { data, error: null };
-  } catch (error) {
-    console.error('Error:', error);
-    return { data: null, error };
-  }
-};
+    return data;
+  },
 
-// Obtener suscripción de un usuario
-export const getSubscription = async (userId: string) => {
-  try {
-    const { data, error } = await supabase
-      .from('ws_subscriptions')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-
-    if (error) {
-      console.error('Error fetching subscription:', error);
-      return { data: null, error };
-    }
-
-    return { data, error: null };
-  } catch (error) {
-    console.error('Error:', error);
-    return { data: null, error };
-  }
-};
-
-// Obtener uso actual del usuario
-export const getUsage = async (userId: string): Promise<{ data: Usage | null, error: any }> => {
-  try {
-    // Obtener suscripción
-    const { data: subscription, error: subError } = await getSubscription(userId);
-    if (subError) {
-      return { data: null, error: subError };
-    }
-
-    if (!subscription) {
-      return { data: null, error: 'No subscription found' };
-    }
-
-    // Obtener uso desde la tabla ws_usage
-    const { data: usageData, error: usageError } = await supabase
-      .from('ws_usage')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-
-    if (usageError && usageError.code !== 'PGRST116') { // PGRST116 = no rows returned
-      console.error('Error fetching usage:', usageError);
-      return { data: null, error: usageError };
-    }
-
-    const currentStores = usageData?.current_stores || 0;
-    const currentProducts = usageData?.current_products || 0;
-    const totalStock = usageData?.total_stock || 0;
-    
-    const trialEndDate = new Date(subscription.trial_end_date);
-    const now = new Date();
-    const daysRemaining = Math.max(0, Math.ceil((trialEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
-    const isTrialActive = subscription.plan === 'free' && daysRemaining > 0;
-
-    const usage: Usage = {
-      current_stores: currentStores,
-      current_products: currentProducts,
-      total_stock: totalStock,
-      days_remaining: daysRemaining,
-      is_trial_active: isTrialActive
-    };
-
-    return { data: usage, error: null };
-  } catch (error) {
-    console.error('Error:', error);
-    return { data: null, error };
-  }
-};
-
-// Verificar si el usuario puede agregar más stores
-export const canAddStore = async (userId: string): Promise<{ can: boolean, error?: string }> => {
-  try {
-    const { data: subscription, error: subError } = await getSubscription(userId);
-    if (subError || !subscription) {
-      return { can: false, error: 'No subscription found' };
-    }
-
-    const { data: usage, error: usageError } = await getUsage(userId);
-    if (usageError || !usage) {
-      return { can: false, error: 'Cannot check usage' };
-    }
-
-    // Verificar si está en período de prueba
-    if (subscription.plan === 'free' && !usage.is_trial_active) {
-      return { can: false, error: 'Período de prueba expirado. Actualiza tu plan para agregar más tiendas.' };
-    }
-
-    // Verificar límite de stores
-    if (subscription.max_stores !== -1 && usage.current_stores >= subscription.max_stores) {
-      return { can: false, error: `Has alcanzado el límite de ${subscription.max_stores} tienda(s). Actualiza tu plan para agregar más tiendas.` };
-    }
-
-    return { can: true };
-  } catch (error) {
-    console.error('Error:', error);
-    return { can: false, error: 'Error verificando límites de tiendas' };
-  }
-};
-
-// Verificar si el usuario puede agregar más productos
-export const canAddProduct = async (userId: string): Promise<{ can: boolean, error?: string }> => {
-  try {
-    const { data: subscription, error: subError } = await getSubscription(userId);
-    if (subError || !subscription) {
-      return { can: false, error: 'No subscription found' };
-    }
-
-    const { data: usage, error: usageError } = await getUsage(userId);
-    if (usageError || !usage) {
-      return { can: false, error: 'Cannot check usage' };
-    }
-
-    // Verificar si está en período de prueba
-    if (subscription.plan === 'free' && !usage.is_trial_active) {
-      return { can: false, error: 'Período de prueba expirado. Actualiza tu plan para agregar más productos.' };
-    }
-
-    // Verificar límite de productos
-    if (subscription.max_products !== -1 && usage.current_products >= subscription.max_products) {
-      return { can: false, error: `Has alcanzado el límite de ${subscription.max_products} productos. Actualiza tu plan para agregar más productos.` };
-    }
-
-    return { can: true };
-  } catch (error) {
-    console.error('Error:', error);
-    return { can: false, error: 'Error verificando límites de productos' };
-  }
-};
-
-// Verificar si el usuario puede agregar más stock a un producto
-export const canAddStock = async (userId: string, currentStock: number, additionalStock: number): Promise<{ can: boolean, error?: string }> => {
-  try {
-    const { data: subscription, error: subError } = await getSubscription(userId);
-    if (subError || !subscription) {
-      return { can: false, error: 'No subscription found' };
-    }
-
-    // Verificar límite de stock por producto
-    if (subscription.max_stock_per_product !== -1 && (currentStock + additionalStock) > subscription.max_stock_per_product) {
-      return { can: false, error: `No puedes tener más de ${subscription.max_stock_per_product} unidades por producto en tu plan actual.` };
-    }
-
-    return { can: true };
-  } catch (error) {
-    console.error('Error:', error);
-    return { can: false, error: 'Error verificando límites de stock' };
-  }
-};
-
-// Obtener plan por ID
-export const getPlanById = (planId: string): Plan | undefined => {
-  return SUBSCRIPTION_PLANS.find(plan => plan.id === planId);
-};
-
-// Actualizar suscripción (para cuando se pague)
-export const updateSubscription = async (userId: string, planId: string, paymentData: any) => {
-  try {
-    const plan = getPlanById(planId);
-    if (!plan) {
-      return { data: null, error: 'Invalid plan' };
+  // Actualizar el estado de una suscripción
+  async updateSubscriptionStatus(
+    subscriptionId: number,
+    status: Subscription['status'],
+    paymentStatus?: Subscription['payment_status']
+  ): Promise<Subscription | null> {
+    const updateData: any = { status };
+    if (paymentStatus) {
+      updateData.payment_status = paymentStatus;
     }
 
     const { data, error } = await supabase
       .from('ws_subscriptions')
-      .update({
-        plan: planId,
-        status: 'active',
-        max_stores: plan.max_stores,
-        max_products: plan.max_products,
-        max_stock_per_product: plan.max_stock_per_product,
-        trial_days: 0,
-        updated_at: new Date().toISOString()
-      })
-      .eq('user_id', userId)
+      .update(updateData)
+      .eq('id', subscriptionId)
       .select()
       .single();
 
     if (error) {
       console.error('Error updating subscription:', error);
-      return { data: null, error };
+      throw new Error('Error al actualizar la suscripción');
     }
 
-    // Registrar el pago
-    await supabase
-      .from('ws_payments')
-      .insert({
+    return data;
+  },
+
+  // Cancelar una suscripción
+  async cancelSubscription(subscriptionId: number): Promise<Subscription | null> {
+    return this.updateSubscriptionStatus(subscriptionId, 'cancelled');
+  },
+
+  // Obtener historial de suscripciones del usuario
+  async getUserSubscriptionHistory(userId: string): Promise<Subscription[]> {
+    const { data, error } = await supabase
+      .from('ws_subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching subscription history:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+};
+
+// =====================================================
+// SERVICIO DE LÍMITES DE USO
+// =====================================================
+
+export const usageService = {
+  // Obtener límites de uso del usuario
+  async getUserLimits(userId: string): Promise<UserLimits | null> {
+    const { data, error } = await supabase
+      .rpc('check_user_limits', { user_uuid: userId });
+
+    if (error) {
+      console.error('Error fetching user limits:', error);
+      return null;
+    }
+
+    return data?.[0] || null;
+  },
+
+  // Obtener estadísticas de uso
+  async getUsageStatistics(userId: string): Promise<UsageLimits | null> {
+    const { data, error } = await supabase
+      .from('ws_usage')
+      .select('*')
+      .eq('user_id', userId)
+      .order('last_updated', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching usage statistics:', error);
+      return null;
+    }
+
+    return data;
+  },
+
+  // Actualizar uso de productos
+  async updateProductUsage(userId: string, productCount: number): Promise<void> {
+    const { error } = await supabase
+      .from('ws_usage')
+      .upsert({
         user_id: userId,
-        subscription_id: data.id,
-        amount: paymentData.amount,
-        currency: 'CLP',
-        payment_method: 'webpay',
-        status: 'completed',
-        transaction_id: paymentData.transactionId,
-        created_at: new Date().toISOString()
+        current_products: productCount,
+        last_updated: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
       });
 
-    return { data, error: null };
-  } catch (error) {
-    console.error('Error:', error);
-    return { data: null, error };
+    if (error) {
+      console.error('Error updating product usage:', error);
+      throw new Error('Error al actualizar el uso de productos');
+    }
+  },
+
+  // Actualizar uso de stock
+  async updateStockUsage(userId: string, stockTotal: number): Promise<void> {
+    const { error } = await supabase
+      .from('ws_usage')
+      .upsert({
+        user_id: userId,
+        current_stock_total: stockTotal,
+        last_updated: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      });
+
+    if (error) {
+      console.error('Error updating stock usage:', error);
+      throw new Error('Error al actualizar el uso de stock');
+    }
+  },
+
+  // Verificar si el usuario puede agregar más productos
+  async canAddProduct(userId: string): Promise<boolean> {
+    const limits = await this.getUserLimits(userId);
+    return limits?.can_add_product || false;
+  },
+
+  // Verificar si el usuario puede agregar más stock
+  async canAddStock(userId: string): Promise<boolean> {
+    const limits = await this.getUserLimits(userId);
+    return limits?.can_add_stock || false;
   }
-}; 
+};
+
+// =====================================================
+// SERVICIO DE HISTORIAL DE PAGOS
+// =====================================================
+
+export const paymentService = {
+  // Obtener historial de pagos de una suscripción
+  async getPaymentHistory(subscriptionId: number): Promise<PaymentHistory[]> {
+    const { data, error } = await supabase
+      .from('ws_payment_history')
+      .select('*')
+      .eq('subscription_id', subscriptionId)
+      .order('payment_date', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching payment history:', error);
+      return [];
+    }
+
+    return data || [];
+  },
+
+  // Registrar un nuevo pago
+  async recordPayment(
+    subscriptionId: number,
+    amount: number,
+    paymentMethod: string,
+    transactionId?: string
+  ): Promise<PaymentHistory | null> {
+    const { data, error } = await supabase
+      .from('ws_payment_history')
+      .insert({
+        subscription_id: subscriptionId,
+        amount,
+        currency: 'CLP',
+        payment_method: paymentMethod,
+        transaction_id: transactionId,
+        status: 'completed',
+        payment_date: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error recording payment:', error);
+      throw new Error('Error al registrar el pago');
+    }
+
+    return data;
+  },
+
+  // Actualizar estado de un pago
+  async updatePaymentStatus(
+    paymentId: number,
+    status: PaymentHistory['status']
+  ): Promise<PaymentHistory | null> {
+    const { data, error } = await supabase
+      .from('ws_payment_history')
+      .update({ status })
+      .eq('id', paymentId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating payment status:', error);
+      throw new Error('Error al actualizar el estado del pago');
+    }
+
+    return data;
+  }
+};
+
+// =====================================================
+// FUNCIONES DE UTILIDAD
+// =====================================================
+
+export const subscriptionUtils = {
+  // Formatear precio para mostrar
+  formatPrice(price: number): string {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP'
+    }).format(price);
+  },
+
+  // Calcular precio con descuento
+  calculateDiscountedPrice(originalPrice: number, discountPercentage: number): number {
+    return originalPrice * (1 - discountPercentage / 100);
+  },
+
+  // Verificar si un plan es gratuito
+  isFreePlan(plan: Plan): boolean {
+    return plan.price === 0;
+  },
+
+  // Verificar si un plan tiene límites
+  hasLimits(plan: Plan): boolean {
+    return plan.max_products !== null || plan.max_stock_per_product !== null;
+  },
+
+  // Obtener descripción de límites
+  getLimitsDescription(plan: Plan): string {
+    if (!this.hasLimits(plan)) {
+      return 'Sin límites';
+    }
+
+    const limits = [];
+    if (plan.max_products !== null) {
+      limits.push(`${plan.max_products} productos máximo`);
+    }
+    if (plan.max_stock_per_product !== null) {
+      limits.push(`${plan.max_stock_per_product} stock por producto`);
+    }
+
+    return limits.join(', ');
+  }
+};
+
+// =====================================================
+// FIN DEL ARCHIVO
+// ===================================================== 

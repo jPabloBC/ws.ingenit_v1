@@ -1,9 +1,7 @@
 'use client';
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
-import { getProfile } from '@/services/supabase/profiles';
-
+// Removido: import no usado
 interface StoreConfig {
   name: string;
   modules: Array<{
@@ -37,7 +35,8 @@ const storeConfigs: { [key: string]: StoreConfig } = {
     modules: [
       { name: "Dashboard", path: "/dashboard", icon: "Home" },
       { name: "Productos", path: "/inventory", icon: "Package" },
-      { name: "Ventas Rápidas", path: "/sales", icon: "ShoppingCart" },
+      { name: "Ventas Rápidas", path: "/quick-sales", icon: "ShoppingCart" },
+      { name: "Historial de Ventas", path: "/sales", icon: "ShoppingCart" },
       { name: "Stock", path: "/stock", icon: "Box" },
       { name: "Bodega", path: "/warehouse", icon: "Warehouse" },
       { name: "Categorías", path: "/categories", icon: "Folder" },
@@ -51,7 +50,7 @@ const storeConfigs: { [key: string]: StoreConfig } = {
     modules: [
       { name: "Dashboard", path: "/dashboard", icon: "Home" },
       { name: "Productos", path: "/inventory", icon: "Package" },
-      { name: "Ventas", path: "/sales", icon: "ShoppingCart" },
+      { name: "Historial de Ventas", path: "/sales", icon: "ShoppingCart" },
       { name: "Clientes", path: "/customers", icon: "Users" },
       { name: "Categorías", path: "/categories", icon: "Folder" },
       { name: "Servicios", path: "/services", icon: "Wrench" },
@@ -67,7 +66,7 @@ const storeConfigs: { [key: string]: StoreConfig } = {
     modules: [
       { name: "Dashboard", path: "/dashboard", icon: "Home" },
       { name: "Productos", path: "/inventory", icon: "Package" },
-      { name: "Ventas", path: "/sales", icon: "ShoppingCart" },
+      { name: "Historial de Ventas", path: "/sales", icon: "ShoppingCart" },
       { name: "Clientes", path: "/customers", icon: "Users" },
       { name: "Categorías", path: "/categories", icon: "Folder" },
       { name: "Eventos", path: "/events", icon: "Calendar" },
@@ -81,7 +80,8 @@ const storeConfigs: { [key: string]: StoreConfig } = {
     modules: [
       { name: "Dashboard", path: "/dashboard", icon: "Home" },
       { name: "Productos", path: "/inventory", icon: "Package" },
-      { name: "Ventas Rápidas", path: "/sales", icon: "ShoppingCart" },
+      { name: "Ventas Rápidas", path: "/quick-sales", icon: "ShoppingCart" },
+      { name: "Historial de Ventas", path: "/sales", icon: "ShoppingCart" },
       { name: "Stock", path: "/stock", icon: "Box" },
       { name: "Categorías", path: "/categories", icon: "Folder" },
       { name: "Proveedores", path: "/suppliers", icon: "Truck" },
@@ -112,28 +112,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const { user } = useAuth();
 
   useEffect(() => {
-    const loadUserStoreTypes = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
+    const loadUserStoreTypes = async () => {
       try {
-        const profile = await getProfile(user.email!);
-        if (profile && profile.store_types && profile.store_types.length > 0) {
-          // Si el usuario tiene un tipo de tienda guardado, usarlo
-          const savedStoreType = localStorage.getItem('selectedStoreType');
-          if (savedStoreType && profile.store_types.includes(savedStoreType)) {
-            setStoreTypeState(savedStoreType);
-            setStoreConfig(storeConfigs[savedStoreType]);
-          } else {
-            // Usar el primer tipo disponible
-            const firstStoreType = profile.store_types[0];
-            setStoreTypeState(firstStoreType);
-            setStoreConfig(storeConfigs[firstStoreType]);
-            localStorage.setItem('selectedStoreType', firstStoreType);
-          }
+        // No cargar perfil en la página de registro - el usuario aún no tiene perfil
+        if (typeof window !== 'undefined' && window.location.pathname === '/register') {
+          setLoading(false);
+          return;
         }
+
+        // TODO: Implement profile loading functions
+        // For now, set default store type
+        const savedStoreType = localStorage.getItem('selectedStoreType') || 'restaurant';
+        setStoreTypeState(savedStoreType);
+        setStoreConfig(storeConfigs[savedStoreType]);
       } catch (error) {
         console.error('Error loading user store types:', error);
       } finally {

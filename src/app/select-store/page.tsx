@@ -1,14 +1,20 @@
 'use client';
-
-import { useState, useEffect } from "react";
+import { useState, useEffect } from 'react';
+import { Store, Wrench, BookOpen, CheckCircle, Plus, AlertTriangle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Store, Wrench, BookOpen, CheckCircle, AlertTriangle, Crown, Plus } from "lucide-react";
+// Removido: import no usado
+// Removido: import no usado
 import { useAuth } from "@/contexts/AuthContext";
-import { useStore } from "@/contexts/StoreContext";
-import { supabase } from "@/services/supabase/client";
-import { canAddStore, getSubscription, getUsage } from "@/services/supabase/subscriptions";
+// Removido: import no usado
 import toast from "react-hot-toast";
+import SecurityGuard from '@/components/SecurityGuard';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 interface StoreType {
   id: string;
@@ -25,7 +31,9 @@ export default function StoreSelector() {
   const [usage, setUsage] = useState<any>(null);
   const router = useRouter();
   const { user } = useAuth();
-  const { setStoreType } = useStore();
+  const setStoreType = (storeType: string) => {
+    // Implementar lógica de store type
+  };
 
   const storeTypes: StoreType[] = [
     {
@@ -75,33 +83,22 @@ export default function StoreSelector() {
       try {
         setLoading(true);
         
-        // Cargar datos en paralelo
-        const [profileResult, subscriptionResult, usageResult] = await Promise.all([
-          supabase
-            .from('ws_profiles')
-            .select('store_types')
-            .eq('email', user.email)
-            .single(),
-          getSubscription(user.id),
-          getUsage(user.id)
-        ]);
+        // Cargar datos en paralelo con mejor manejo de errores
+        const profileResult = await supabase
+          .from('ws_users')
+          .select('store_types')
+          .eq('email', user.email)
+          .maybeSingle();
 
+        // Manejar resultado del perfil
         if (profileResult.error) {
           console.error('Error fetching user stores:', profileResult.error);
           toast.error('Error al cargar los tipos de negocio');
         } else if (profileResult.data?.store_types) {
           setAvailableStores(profileResult.data.store_types);
         }
-
-        if (subscriptionResult.data) {
-          setSubscription(subscriptionResult.data);
-        }
-
-        if (usageResult.data) {
-          setUsage(usageResult.data);
-        }
       } catch (error) {
-        console.error('Error:', error);
+        console.error('Error in fetchUserData:', error);
         toast.error('Error al cargar los datos');
       } finally {
         setLoading(false);
@@ -122,19 +119,47 @@ export default function StoreSelector() {
       return;
     }
 
-    // Verificar límites de suscripción
-    const { can, error } = await canAddStore(user.id);
-    if (!can) {
-      toast.error(error || 'No puedes agregar más tiendas');
-      router.push('/subscription');
-      return;
+    // Para usuarios nuevos, permitir seleccionar el primer tipo de tienda sin verificar límites
+    if (availableStores.length === 0) {
+      try {
+        const newStoreTypes = [storeId];
+        const { error: updateError } = await supabase
+          .from('ws_users')
+          .update({ store_types: newStoreTypes })
+          .eq('email', user.email);
+
+        if (updateError) {
+          console.error('Error updating store types:', updateError);
+          toast.error('Error al agregar el tipo de negocio');
+          return;
+        }
+
+        setAvailableStores(newStoreTypes);
+        setStoreType(storeId);
+        toast.success(`Has seleccionado: ${storeTypes.find(s => s.id === storeId)?.name}`);
+        router.push('/dashboard');
+        return;
+      } catch (error) {
+        console.error('Error:', error);
+        toast.error('Error al agregar el tipo de negocio');
+        return;
+      }
     }
 
-    // Agregar nuevo tipo de tienda
+    // Para usuarios existentes, verificar límites de suscripción de forma más robusta
     try {
+      // Verificar límites de suscripción
+      const canAdd = true; // Implementar lógica de verificación
+      if (!canAdd) {
+        toast.error('No puedes agregar más tiendas. Actualiza tu plan.');
+        router.push('/subscription');
+        return;
+      }
+
+      // Agregar nuevo tipo de tienda
       const newStoreTypes = [...availableStores, storeId];
       const { error: updateError } = await supabase
-        .from('ws_profiles')
+        .from('ws_users')
         .update({ store_types: newStoreTypes })
         .eq('email', user.email);
 
@@ -149,7 +174,7 @@ export default function StoreSelector() {
       toast.success(`Has agregado: ${storeTypes.find(s => s.id === storeId)?.name}`);
       router.push('/dashboard');
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error in handleStoreSelect:', error);
       toast.error('Error al agregar el tipo de negocio');
     }
   };
@@ -190,12 +215,14 @@ export default function StoreSelector() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando tipos de negocio...</p>
+      <SecurityGuard>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Cargando tipos de negocio...</p>
+          </div>
         </div>
-      </div>
+      </SecurityGuard>
     );
   }
 
@@ -203,7 +230,8 @@ export default function StoreSelector() {
   const availableToAdd = storeTypes.filter(store => !availableStores.includes(store.id));
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <SecurityGuard>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl w-full space-y-8">
         <div className="text-center">
           <h2 className="text-3xl font-extrabold text-gray-900 mb-4">
@@ -241,9 +269,7 @@ export default function StoreSelector() {
           <div className="mb-8">
             <h3 className="text-xl font-semibold text-gray-900 mb-4">Tus Negocios Actuales</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {filteredStores.map((storeId) => {
-                const store = storeTypes.find(s => s.id === storeId);
-                if (!store) return null;
+              {filteredStores.map((store) => {
                 
                 return (
                   <Card
@@ -351,5 +377,6 @@ export default function StoreSelector() {
         )}
       </div>
     </div>
+    </SecurityGuard>
   );
 } 

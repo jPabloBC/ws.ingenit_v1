@@ -1,17 +1,16 @@
 'use client';
-
+import dynamic from 'next/dynamic';
 import { useState, useEffect } from 'react';
+import { Plus, Utensils, Search, Filter, Edit, Trash2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import QuickStat from '@/components/ui/QuickStat';
 import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
-import { formatCurrency } from '@/lib/currency';
 import toast from 'react-hot-toast';
-import { Utensils, Plus, Search, Filter, Edit, Trash2, Eye } from 'lucide-react';
+import SecurityGuard from '@/components/SecurityGuard';
 
 interface MenuItem {
   id: string;
@@ -31,10 +30,10 @@ interface MenuItem {
   };
 }
 
-export default function MenuPage() {
+function MenuPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { storeConfig } = useStore();
+
   const [loading, setLoading] = useState(true);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,8 +48,18 @@ export default function MenuPage() {
   });
 
   useEffect(() => {
+    // Only run on client side
+    if (typeof window === 'undefined') return;
+    
     loadMenu();
   }, []);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP'
+    }).format(amount);
+  };
 
   const loadMenu = async () => {
     try {
@@ -141,7 +150,7 @@ export default function MenuPage() {
       setMenuItems(menuItems.filter(item => item.id !== itemId));
       toast.success('Plato eliminado del menú');
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error deleting menu item:', error);
       toast.error('Error al eliminar el plato');
     }
   };
@@ -155,7 +164,7 @@ export default function MenuPage() {
       ));
       toast.success('Disponibilidad actualizada');
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error updating availability:', error);
       toast.error('Error al actualizar disponibilidad');
     }
   };
@@ -175,16 +184,19 @@ export default function MenuPage() {
 
   if (!user) {
     return (
-      <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <LoadingSpinner />
-        </div>
-      </Layout>
+      <SecurityGuard>
+        <Layout>
+          <div className="flex items-center justify-center min-h-screen">
+            <LoadingSpinner />
+          </div>
+        </Layout>
+      </SecurityGuard>
     );
   }
 
   return (
-    <Layout>
+    <SecurityGuard>
+      <Layout>
       <div className="p-6">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
@@ -192,8 +204,7 @@ export default function MenuPage() {
             <h1 className="text-2xl font-bold text-gray-900">Gestión de Menú</h1>
             <p className="text-gray-600">Administra los platos y bebidas del restaurante</p>
           </div>
-          <Button
-            onClick={() => router.push('/menu/add')}
+          <Button             onClick={() => router.push('/menu/add')}
             className="bg-blue-600 hover:bg-blue-700"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -293,8 +304,7 @@ export default function MenuPage() {
                   : 'Aún no se han agregado platos al menú'
                 }
               </p>
-              <Button
-                onClick={() => router.push('/menu/add')}
+              <Button                 onClick={() => router.push('/menu/add')}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -345,24 +355,21 @@ export default function MenuPage() {
                   )}
 
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      onClick={() => router.push(`/menu/edit/${item.id}`)}
+                    <Button                       onClick={() => router.push(`/menu/edit/${item.id}`)}
                       size="sm"
                       variant="outline"
                     >
                       <Edit className="h-3 w-3 mr-1" />
                       Editar
                     </Button>
-                    <Button
-                      onClick={() => handleToggleAvailability(item.id)}
+                    <Button                       onClick={() => handleToggleAvailability(item.id)}
                       size="sm"
                       variant={item.is_available ? "outline" : "default"}
                       className={item.is_available ? "text-red-600" : "bg-green-600 hover:bg-green-700"}
                     >
                       {item.is_available ? 'Desactivar' : 'Activar'}
                     </Button>
-                    <Button
-                      onClick={() => handleDeleteItem(item.id)}
+                    <Button                       onClick={() => handleDeleteItem(item.id)}
                       size="sm"
                       variant="destructive"
                     >
@@ -375,6 +382,11 @@ export default function MenuPage() {
           )}
         </div>
       </div>
-    </Layout>
+      </Layout>
+    </SecurityGuard>
   );
-} 
+}
+
+export default dynamic(() => Promise.resolve(MenuPage), {
+  ssr: false
+}); 

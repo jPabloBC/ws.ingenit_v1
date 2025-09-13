@@ -1,5 +1,3 @@
-import { supabase } from './client';
-
 export interface Customer {
   id: string;
   name: string;

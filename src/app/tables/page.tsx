@@ -1,16 +1,18 @@
 'use client';
-
 import { useState, useEffect } from 'react';
+import { Filter, Search, Table, Users, Clock, Plus } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+// Removido: import no usado
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import QuickStat from '@/components/ui/QuickStat';
 import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
+// Removido: useStore no usado
 import toast from 'react-hot-toast';
-import { Table, Users, Clock, DollarSign, Plus, Search, Filter } from 'lucide-react';
+// Removido: import no usado
+import SecurityGuard from '@/components/SecurityGuard';
 
 interface Table {
   id: string;
@@ -33,7 +35,7 @@ interface Table {
 export default function TablesPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { storeConfig } = useStore();
+
   const [loading, setLoading] = useState(true);
   const [tables, setTables] = useState<Table[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -148,16 +150,19 @@ export default function TablesPage() {
 
   if (!user) {
     return (
-      <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <LoadingSpinner />
-        </div>
-      </Layout>
+      <SecurityGuard>
+        <Layout>
+          <div className="flex items-center justify-center min-h-screen">
+            <LoadingSpinner />
+          </div>
+        </Layout>
+      </SecurityGuard>
     );
   }
 
   return (
-    <Layout>
+    <SecurityGuard>
+      <Layout>
       <div className="p-6">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
@@ -165,8 +170,7 @@ export default function TablesPage() {
             <h1 className="text-2xl font-bold text-gray-900">Control de Mesas</h1>
             <p className="text-gray-600">Gestiona el estado de las mesas del restaurante</p>
           </div>
-          <Button
-            onClick={() => router.push('/tables/add')}
+          <Button             onClick={() => router.push('/tables/add')}
             className="bg-blue-600 hover:bg-blue-700"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -258,8 +262,7 @@ export default function TablesPage() {
                   : 'Aún no se han configurado mesas'
                 }
               </p>
-              <Button
-                onClick={() => router.push('/tables/add')}
+              <Button                 onClick={() => router.push('/tables/add')}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -318,15 +321,13 @@ export default function TablesPage() {
                   <div className="flex flex-wrap gap-2">
                     {table.status === 'available' && (
                       <>
-                        <Button
-                          onClick={() => handleTableAction(table, 'new_order')}
+                        <Button                           onClick={() => handleTableAction(table, 'new_order')}
                           size="sm"
                           className="bg-green-600 hover:bg-green-700"
                         >
                           Nueva Orden
                         </Button>
-                        <Button
-                          onClick={() => handleTableAction(table, 'reserve')}
+                        <Button                           onClick={() => handleTableAction(table, 'reserve')}
                           size="sm"
                           variant="outline"
                         >
@@ -337,15 +338,13 @@ export default function TablesPage() {
                     
                     {table.status === 'occupied' && (
                       <>
-                        <Button
-                          onClick={() => handleTableAction(table, 'view_order')}
+                        <Button                           onClick={() => handleTableAction(table, 'view_order')}
                           size="sm"
                           className="bg-blue-600 hover:bg-blue-700"
                         >
                           Ver Orden
                         </Button>
-                        <Button
-                          onClick={() => handleTableAction(table, 'clean')}
+                        <Button                           onClick={() => handleTableAction(table, 'clean')}
                           size="sm"
                           variant="outline"
                         >
@@ -355,8 +354,7 @@ export default function TablesPage() {
                     )}
                     
                     {table.status === 'cleaning' && (
-                      <Button
-                        onClick={() => handleTableAction(table, 'clean')}
+                      <Button                         onClick={() => handleTableAction(table, 'clean')}
                         size="sm"
                         className="bg-green-600 hover:bg-green-700"
                       >
@@ -370,6 +368,7 @@ export default function TablesPage() {
           )}
         </div>
       </div>
-    </Layout>
+      </Layout>
+    </SecurityGuard>
   );
 } 

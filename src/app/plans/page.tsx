@@ -1,421 +1,397 @@
 'use client';
-
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { CheckCircle, Infinity, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle, Crown, Zap, Star, AlertTriangle, Info } from 'lucide-react';
-import Button from '@/components/ui/Button';
-
-interface SubscriptionPlan {
-  id: string;
-  name: string;
-  price: string;
-  maxStores: number;
-  maxProducts: number;
-  maxStockPerProduct: number;
-  features: string[];
-  limitations: string[];
-  color: string;
-  popular?: boolean;
-  recommended?: boolean;
-}
+import Link from "next/link";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
 
 export default function PlansPage() {
-  const [selectedPlan, setSelectedPlan] = useState<string>('');
-  const router = useRouter();
-
-  const subscriptionPlans: SubscriptionPlan[] = [
-    {
-      id: "free",
-      name: "Plan Gratuito",
-      price: "Gratis",
-      maxStores: 1,
-      maxProducts: 5,
-      maxStockPerProduct: 3,
-      features: [
-        "1 tipo de negocio",
-        "Máximo 5 productos",
-        "Máximo 3 unidades por producto",
-        "10 días de prueba",
-        "Soporte básico por email",
-        "Reportes básicos"
-      ],
-      limitations: [
-        "Solo 1 tipo de negocio",
-        "Máximo 5 productos",
-        "Máximo 3 unidades por producto",
-        "Sin integración con WebPay",
-        "Sin reportes avanzados"
-      ],
-      color: "gray"
-    },
-    {
-      id: "single",
-      name: "Single Store",
-      price: "$10.000/mes",
-      maxStores: 1,
-      maxProducts: -1, // Ilimitado
-      maxStockPerProduct: -1, // Ilimitado
-      features: [
-        "1 tipo de negocio",
-        "Productos ilimitados",
-        "Stock ilimitado",
-        "Soporte prioritario",
-        "Reportes avanzados",
-        "Integración con WebPay",
-        "Backup automático"
-      ],
-      limitations: [
-        "Solo 1 tipo de negocio"
-      ],
-      color: "blue"
-    },
-    {
-      id: "double",
-      name: "Double Store",
-      price: "$15.000/mes",
-      maxStores: 2,
-      maxProducts: -1,
-      maxStockPerProduct: -1,
-      features: [
-        "2 tipos de negocio",
-        "Productos ilimitados",
-        "Stock ilimitado",
-        "Soporte prioritario",
-        "Reportes avanzados",
-        "Integración con WebPay",
-        "Backup automático",
-        "Análisis de ventas"
-      ],
-      limitations: [
-        "Máximo 2 tipos de negocio"
-      ],
-      color: "green"
-    },
-    {
-      id: "triple",
-      name: "Triple Store",
-      price: "$18.000/mes",
-      maxStores: 3,
-      maxProducts: -1,
-      maxStockPerProduct: -1,
-      features: [
-        "3 tipos de negocio",
-        "Productos ilimitados",
-        "Stock ilimitado",
-        "Soporte prioritario",
-        "Reportes avanzados",
-        "Integración con WebPay",
-        "Backup automático",
-        "Análisis de ventas",
-        "Predicciones de stock"
-      ],
-      limitations: [
-        "Máximo 3 tipos de negocio"
-      ],
-      color: "purple"
-    },
-    {
-      id: "quad",
-      name: "Quad Store",
-      price: "$22.000/mes",
-      maxStores: 4,
-      maxProducts: -1,
-      maxStockPerProduct: -1,
-      features: [
-        "4 tipos de negocio",
-        "Productos ilimitados",
-        "Stock ilimitado",
-        "Soporte prioritario",
-        "Reportes avanzados",
-        "Integración con WebPay",
-        "Backup automático",
-        "Análisis de ventas",
-        "Predicciones de stock",
-        "Dashboard personalizado"
-      ],
-      limitations: [
-        "Máximo 4 tipos de negocio"
-      ],
-      color: "orange"
-    },
-    {
-      id: "full",
-      name: "Full Access",
-      price: "$25.000/mes",
-      maxStores: -1, // Ilimitado
-      maxProducts: -1,
-      maxStockPerProduct: -1,
-      features: [
-        "Tipos de negocio ilimitados",
-        "Productos ilimitados",
-        "Stock ilimitado",
-        "Soporte VIP 24/7",
-        "Reportes avanzados",
-        "Integración con WebPay",
-        "Backup automático",
-        "Análisis de ventas",
-        "Predicciones de stock",
-        "Dashboard personalizado",
-        "API personalizada",
-        "White-label disponible"
-      ],
-      limitations: [],
-      color: "red",
-      popular: true,
-      recommended: true
-    }
-  ];
-
-  const getPlanColorClasses = (color: string) => {
-    switch (color) {
-      case "blue":
-        return "border-blue-200 bg-blue-50";
-      case "orange":
-        return "border-orange-200 bg-orange-50";
-      case "green":
-        return "border-green-200 bg-green-50";
-      case "purple":
-        return "border-purple-200 bg-purple-50";
-      case "red":
-        return "border-red-200 bg-red-50";
-      default:
-        return "border-gray-200 bg-gray-50";
-    }
-  };
-
-  const handlePlanSelect = (planId: string) => {
-    setSelectedPlan(planId);
-  };
-
-  const handleUpgrade = () => {
-    if (selectedPlan === 'free') {
-      router.push('/register');
-    } else {
-      // Aquí iría la lógica para actualizar a un plan de pago
-      router.push('/subscription');
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Planes de Suscripción
+    <div className="min-h-screen bg-gradient-to-br from-blue15 to-blue13">
+      <Header />
+      
+      {/* Hero Section */}
+      <section className="container mx-auto px-4 py-16 sm:py-20 lg:py-24 pt-16">
+        <div className="text-center max-w-4xl mx-auto">
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-title font-bold text-blue1 mb-6">
+            Elige el Plan Perfecto
           </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Elige el plan que mejor se adapte a tu negocio. Todos los planes incluyen soporte técnico y actualizaciones automáticas.
+          <p className="text-xl sm:text-2xl text-gray2 mb-8 font-body leading-relaxed">
+            Desde emprendedores hasta grandes empresas, tenemos la solución ideal para hacer crecer tu negocio.
           </p>
         </div>
+      </section>
 
-        {/* Información General */}
-        <Card className="border-blue-200 bg-blue-50">
-          <CardHeader>
-            <CardTitle className="flex items-center text-blue-800">
-              <Info className="h-5 w-5 mr-2" />
-              Información Importante
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h4 className="font-semibold text-blue-900 mb-2">Plan Gratuito</h4>
-                <ul className="text-sm text-blue-800 space-y-1">
-                  <li>• 10 días de prueba gratuita</li>
-                  <li>• 1 tipo de negocio</li>
-                  <li>• Máximo 5 productos</li>
-                  <li>• Máximo 3 unidades por producto</li>
-                  <li>• Soporte básico por email</li>
-                </ul>
+      {/* Plans Section */}
+      <section className="container mx-auto px-4 py-16 lg:py-20">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+          
+          {/* Free Plan */}
+          <Card className="border-2 border-gray8 bg-white relative">
+            <CardHeader className="text-center pb-6">
+              <CardTitle className="text-2xl font-title text-blue1 mb-2">Plan Gratuito</CardTitle>
+              <div className="text-center">
+                <span className="text-4xl font-title font-bold text-blue1">Gratis</span>
+                <p className="text-gray3 font-body mt-2">Para empezar</p>
               </div>
-              <div>
-                <h4 className="font-semibold text-blue-900 mb-2">Planes de Pago</h4>
-                <ul className="text-sm text-blue-800 space-y-1">
-                  <li>• Productos y stock ilimitados</li>
-                  <li>• Múltiples tipos de negocio</li>
-                  <li>• Integración con WebPay</li>
-                  <li>• Reportes avanzados</li>
-                  <li>• Soporte prioritario</li>
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Planes */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {subscriptionPlans.map((plan) => (
-            <Card
-              key={plan.id}
-              className={`${getPlanColorClasses(plan.color)} transition-all duration-300 hover:scale-105 ${
-                selectedPlan === plan.id ? 'ring-2 ring-blue-500' : ''
-              } ${plan.popular ? 'ring-2 ring-yellow-400' : ''}`}
-            >
-              <CardHeader>
-                <div className="flex items-center justify-between mb-4">
-                  <CardTitle className="text-xl font-bold text-gray-900">
-                    {plan.name}
-                  </CardTitle>
-                  <div className="flex items-center space-x-2">
-                    {plan.popular && (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                        <Crown className="h-3 w-3 mr-1" />
-                        Popular
-                      </span>
-                    )}
-                    {plan.recommended && (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        <Star className="h-3 w-3 mr-1" />
-                        Recomendado
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="text-3xl font-bold text-gray-900 mb-2">
-                  {plan.price}
-                </div>
-                {plan.id === 'free' && (
-                  <p className="text-sm text-gray-600">
-                    Incluye 10 días de prueba
-                  </p>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Características */}
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2">Características</h4>
-                  <ul className="space-y-2">
-                    {plan.features.map((feature, index) => (
-                      <li key={index} className="flex items-center text-sm text-gray-600">
-                        <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Limitaciones */}
-                {plan.limitations.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">Limitaciones</h4>
-                    <ul className="space-y-2">
-                      {plan.limitations.map((limitation, index) => (
-                        <li key={index} className="flex items-center text-sm text-gray-600">
-                          <AlertTriangle className="h-4 w-4 text-orange-500 mr-2" />
-                          {limitation}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Botón de acción */}
-                <div className="pt-4">
-                  <Button
-                    onClick={() => handlePlanSelect(plan.id)}
-                    className={`w-full ${
-                      selectedPlan === plan.id 
-                        ? 'bg-blue-600 hover:bg-blue-700' 
-                        : 'bg-gray-600 hover:bg-gray-700'
-                    } text-white`}
-                  >
-                    {selectedPlan === plan.id ? 'Seleccionado' : 'Seleccionar Plan'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Acción */}
-        {selectedPlan && (
-          <Card className="border-green-200 bg-green-50">
-            <CardHeader>
-              <CardTitle className="flex items-center text-green-800">
-                <Zap className="h-5 w-5 mr-2" />
-                Plan Seleccionado
-              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-800">
-                    Has seleccionado el <strong>{subscriptionPlans.find(p => p.id === selectedPlan)?.name}</strong>
-                  </p>
-                  <p className="text-sm text-green-700 mt-1">
-                    {selectedPlan === 'free' 
-                      ? 'Crea tu cuenta gratuita para comenzar'
-                      : 'Actualiza tu suscripción para acceder a todas las funcionalidades'
-                    }
-                  </p>
-                </div>
-                <Button
-                  onClick={handleUpgrade}
-                  className="bg-green-600 hover:bg-green-700 text-white"
+              <ul className="space-y-4 text-gray2 font-body mb-8">
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Sin límite de días de uso</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Máximo 5 productos</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Máximo 5 en stock por producto</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Funcionalidades básicas</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Soporte por email</span>
+                </li>
+              </ul>
+              <div className="space-y-3">
+                <Link
+                  href="/register"
+                  className="w-full inline-flex items-center justify-center px-6 py-3 text-base font-semibold rounded-lg text-blue8 bg-blue15 hover:bg-blue8 hover:text-white transition-all duration-200"
                 >
-                  {selectedPlan === 'free' ? 'Crear Cuenta Gratuita' : 'Actualizar Suscripción'}
-                </Button>
+                  Comenzar Gratis
+                </Link>
+                <p className="text-xs text-gray3 text-center">
+                  Sin tarjeta de crédito requerida
+                </p>
               </div>
             </CardContent>
           </Card>
-        )}
 
-        {/* FAQ */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Preguntas Frecuentes</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <h4 className="font-semibold text-gray-900">¿Puedo cambiar de plan en cualquier momento?</h4>
-              <p className="text-sm text-gray-600">
-                Sí, puedes actualizar o degradar tu plan en cualquier momento desde tu dashboard.
-              </p>
+          {/* Monthly Plan */}
+          <Card className="border-2 border-blue8 bg-blue15 relative transform scale-105">
+            <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+              <span className="bg-blue8 text-white px-4 py-1 rounded-full text-sm font-semibold">
+                Más Popular
+              </span>
             </div>
-            <div>
-              <h4 className="font-semibold text-gray-900">¿Qué pasa si excedo los límites del plan gratuito?</h4>
-              <p className="text-sm text-gray-600">
-                El sistema te notificará cuando te acerques a los límites y te sugerirá actualizar a un plan de pago.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900">¿Incluye soporte técnico?</h4>
-              <p className="text-sm text-gray-600">
-                Todos los planes incluyen soporte técnico. Los planes de pago incluyen soporte prioritario.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900">¿Puedo cancelar en cualquier momento?</h4>
-              <p className="text-sm text-gray-600">
-                Sí, puedes cancelar tu suscripción en cualquier momento sin penalización.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+            <CardHeader className="text-center pb-6">
+              <CardTitle className="text-2xl font-title text-blue1 mb-2">Plan Mensual</CardTitle>
+              <div className="text-center">
+                <span className="text-4xl font-title font-bold text-blue1">$15.000</span>
+                <span className="text-gray2 font-body">/mes</span>
+                <p className="text-gray3 font-body mt-2">Sin límites</p>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-4 text-gray2 font-body mb-8">
+                <li className="flex items-center">
+                  <Infinity className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Productos ilimitados</span>
+                </li>
+                <li className="flex items-center">
+                  <Infinity className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Stock ilimitado</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Todas las funcionalidades</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Reportes avanzados</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Soporte prioritario</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Integración WebPay</span>
+                </li>
+              </ul>
+              <div className="space-y-3">
+                <Link
+                  href="/register?plan=monthly"
+                  className="w-full inline-flex items-center justify-center px-6 py-3 text-base font-semibold rounded-lg text-white bg-blue8 hover:bg-blue6 transition-all duration-200"
+                >
+                  Elegir Plan Mensual
+                </Link>
+                <p className="text-xs text-gray3 text-center">
+                  Facturación mensual automática
+                </p>
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* CTA */}
-        <div className="text-center">
-          <p className="text-gray-600 mb-4">
-            ¿Necesitas ayuda para elegir el plan correcto?
+          {/* Annual Plan */}
+          <Card className="border-2 border-blue8 bg-white relative">
+            <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+              <span className="bg-green-600 text-white px-4 py-1 rounded-full text-sm font-semibold">
+                20% Descuento
+              </span>
+            </div>
+            <CardHeader className="text-center pb-6">
+              <CardTitle className="text-2xl font-title text-blue1 mb-2">Plan Anual</CardTitle>
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <span className="text-2xl font-title line-through text-gray4">$180.000</span>
+                  <span className="text-4xl font-title font-bold text-blue1">$144.000</span>
+                </div>
+                <span className="text-gray2 font-body">/año</span>
+                <p className="text-gray3 font-body mt-2">Ahorra $36.000</p>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-4 text-gray2 font-body mb-8">
+                <li className="flex items-center">
+                  <Infinity className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Productos ilimitados</span>
+                </li>
+                <li className="flex items-center">
+                  <Infinity className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Stock ilimitado</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Todas las funcionalidades</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Reportes avanzados</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>Soporte VIP 24/7</span>
+                </li>
+                <li className="flex items-center">
+                  <CheckCircle className="h-5 w-5 text-blue8 mr-3 flex-shrink-0" />
+                  <span>API personalizada</span>
+                </li>
+              </ul>
+              <div className="space-y-3">
+                <Link
+                  href="/register?plan=annual"
+                  className="w-full inline-flex items-center justify-center px-6 py-3 text-base font-semibold rounded-lg text-blue8 bg-blue15 hover:bg-blue8 hover:text-white transition-all duration-200"
+                >
+                  Elegir Plan Anual
+                </Link>
+                <p className="text-xs text-gray3 text-center">
+                  Facturación anual con descuento
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* Features Comparison */}
+      <section className="container mx-auto px-4 py-16 lg:py-20">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl sm:text-4xl font-title font-bold text-blue1 mb-4">
+            Comparación de Funcionalidades
+          </h2>
+          <p className="text-lg text-gray2 max-w-2xl mx-auto font-body">
+            Descubre qué incluye cada plan para tu negocio.
           </p>
-          <div className="flex justify-center space-x-4">
-            <Button
-              onClick={() => router.push('/register')}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              Crear Cuenta Gratuita
-            </Button>
-            <Button
-              onClick={() => router.push('/login')}
-              variant="outline"
-            >
-              Ya tengo cuenta
-            </Button>
+        </div>
+        
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 lg:p-12 max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="text-center">
+              <h3 className="font-title font-semibold text-blue1 mb-4">Funcionalidad</h3>
+            </div>
+            <div className="text-center">
+              <h3 className="font-title font-semibold text-gray2 mb-4">Gratuito</h3>
+            </div>
+            <div className="text-center">
+              <h3 className="font-title font-semibold text-blue8 mb-4">Mensual</h3>
+            </div>
+            <div className="text-center">
+              <h3 className="font-title font-semibold text-blue8 mb-4">Anual</h3>
+            </div>
+            
+            {/* Productos */}
+            <div className="text-left">
+              <span className="font-body text-gray2">Productos</span>
+            </div>
+            <div className="text-center">
+              <span className="font-body text-gray2">5 máximo</span>
+            </div>
+            <div className="text-center">
+              <Infinity className="h-5 w-5 text-blue8 mx-auto" />
+            </div>
+            <div className="text-center">
+              <Infinity className="h-5 w-5 text-blue8 mx-auto" />
+            </div>
+            
+            {/* Stock */}
+            <div className="text-left">
+              <span className="font-body text-gray2">Stock por producto</span>
+            </div>
+            <div className="text-center">
+              <span className="font-body text-gray2">5 máximo</span>
+            </div>
+            <div className="text-center">
+              <Infinity className="h-5 w-5 text-blue8 mx-auto" />
+            </div>
+            <div className="text-center">
+              <Infinity className="h-5 w-5 text-blue8 mx-auto" />
+            </div>
+            
+            {/* Reportes */}
+            <div className="text-left">
+              <span className="font-body text-gray2">Reportes</span>
+            </div>
+            <div className="text-center">
+              <span className="font-body text-gray2">Básicos</span>
+            </div>
+            <div className="text-center">
+              <CheckCircle className="h-5 w-5 text-blue8 mx-auto" />
+            </div>
+            <div className="text-center">
+              <CheckCircle className="h-5 w-5 text-blue8 mx-auto" />
+            </div>
+            
+            {/* WebPay */}
+            <div className="text-left">
+              <span className="font-body text-gray2">WebPay</span>
+            </div>
+            <div className="text-center">
+              <span className="font-body text-gray2">-</span>
+            </div>
+            <div className="text-center">
+              <CheckCircle className="h-5 w-5 text-blue8 mx-auto" />
+            </div>
+            <div className="text-center">
+              <CheckCircle className="h-5 w-5 text-blue8 mx-auto" />
+            </div>
+            
+            {/* API */}
+            <div className="text-left">
+              <span className="font-body text-gray2">API</span>
+            </div>
+            <div className="text-center">
+              <span className="font-body text-gray2">-</span>
+            </div>
+            <div className="text-center">
+              <span className="font-body text-gray2">-</span>
+            </div>
+            <div className="text-center">
+              <CheckCircle className="h-5 w-5 text-blue8 mx-auto" />
+            </div>
+            
+            {/* Soporte */}
+            <div className="text-left">
+              <span className="font-body text-gray2">Soporte</span>
+            </div>
+            <div className="text-center">
+              <span className="font-body text-gray2">Email</span>
+            </div>
+            <div className="text-center">
+              <span className="font-body text-gray2">Prioritario</span>
+            </div>
+            <div className="text-center">
+              <span className="font-body text-gray2">VIP 24/7</span>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section className="container mx-auto px-4 py-16 lg:py-20">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl sm:text-4xl font-title font-bold text-blue1 mb-4">
+            Preguntas Frecuentes
+          </h2>
+          <p className="text-lg text-gray2 max-w-2xl mx-auto font-body">
+            Resolvemos tus dudas sobre nuestros planes y servicios.
+          </p>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          <Card className="border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-lg font-title text-blue1">¿Cómo funciona la compra de paquetes?</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray2 font-body">
+                Los planes se configuran directamente dentro de tu plataforma. Una vez que elijas tu plan, 
+                podrás configurar el método de pago y gestionar tu suscripción desde el panel de administración.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-lg font-title text-blue1">¿Puedo cambiar de plan en cualquier momento?</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray2 font-body">
+                Sí, puedes cambiar tu plan en cualquier momento desde tu panel de administración. 
+                Los cambios se aplicarán en el próximo ciclo de facturación.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-lg font-title text-blue1">¿Qué pasa si excedo los límites del plan gratuito?</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray2 font-body">
+                Recibirás notificaciones cuando te acerques a los límites. Para continuar creciendo, 
+                simplemente actualiza a un plan de pago desde tu panel de administración.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-lg font-title text-blue1">¿El descuento anual es permanente?</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray2 font-body">
+                Sí, el 20% de descuento se aplica automáticamente al elegir el plan anual. 
+                Este descuento se mantiene mientras tengas una suscripción anual activa.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="container mx-auto px-4 py-16 lg:py-20">
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 lg:p-12 text-center max-w-4xl mx-auto">
+          <h2 className="text-3xl sm:text-4xl font-title font-bold text-blue1 mb-6">
+            ¿Listo para elegir tu plan?
+          </h2>
+          <p className="text-xl text-gray2 mb-8 font-body max-w-2xl mx-auto">
+            Comienza gratis y actualiza cuando tu negocio crezca. Sin compromisos, sin sorpresas.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href="/register"
+              className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-lg text-white bg-blue8 hover:bg-blue6 transition-all duration-200 transform hover:scale-105 shadow-lg"
+            >
+              <Zap className="mr-3 h-6 w-6" />
+              Comenzar Gratis
+            </Link>
+            <Link
+              href="/login"
+              className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-lg text-blue8 bg-transparent hover:bg-blue15 transition-all duration-200 border-2 border-blue8"
+            >
+              Ya tengo cuenta
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <Footer />
     </div>
   );
 } 

@@ -1,11 +1,17 @@
 'use client';
-
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+// Removido: import no usado
 import Button from '@/components/ui/Button';
 import { setupDatabase, checkDatabaseConnection } from '@/services/supabase/setup';
-import { supabase } from '@/services/supabase/client';
+import { createClient } from '@supabase/supabase-js';
 import toast from 'react-hot-toast';
+import SecurityGuard from '@/components/SecurityGuard';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function SetupPage() {
   const [loading, setLoading] = useState(false);
@@ -64,7 +70,7 @@ export default function SetupPage() {
     try {
       // Intentar crear un registro de prueba
       const { data, error } = await supabase
-        .from('ws_profiles')
+        .from('ws_users')
         .insert([{
           name: 'Test User',
           email: 'test@example.com',
@@ -83,7 +89,7 @@ export default function SetupPage() {
         // Eliminar el registro de prueba
         if (data && data[0]) {
           await supabase
-            .from('ws_profiles')
+            .from('ws_users')
             .delete()
             .eq('email', 'test@example.com');
         }
@@ -98,7 +104,8 @@ export default function SetupPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <SecurityGuard>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
@@ -163,5 +170,6 @@ export default function SetupPage() {
         </div>
       </div>
     </div>
-  );
+  
+      </SecurityGuard>);
 } 

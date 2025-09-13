@@ -1,36 +1,43 @@
-import { supabase } from './client';
+import { supabaseAdmin as supabase } from './admin';
 
 export const setupDatabase = async () => {
   try {
     console.log('Setting up database...');
     
-    // Verificar si la tabla ws_profiles existe
+    // Verificar si la tabla ws_users existe
     const { data: tableExists, error: checkError } = await supabase
-      .from('ws_profiles')
+      .from('ws_users')
       .select('*')
       .limit(1);
 
     if (checkError) {
-      console.log('Table ws_profiles does not exist, creating it...');
+      console.log('Table ws_users does not exist, creating it...');
       
-      // Crear la tabla ws_profiles
+      // Crear la tabla ws_users
       const { error: createError } = await supabase.rpc('exec_sql', {
         sql: `
-          CREATE TABLE IF NOT EXISTS ws_profiles (
-            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            email VARCHAR(255) UNIQUE NOT NULL,
-            store_types TEXT[] DEFAULT '{}',
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          CREATE TABLE IF NOT EXISTS ws_users (
+            user_id UUID NOT NULL,
+            name CHARACTER VARYING(255) NOT NULL,
+            email CHARACTER VARYING(255) NOT NULL,
+            store_types TEXT[] NULL,
+            created_at TIMESTAMP WITHOUT TIME ZONE NULL,
+            updated_at TIMESTAMP WITHOUT TIME ZONE NULL,
+            plan_id TEXT NULL,
+            country_code TEXT NULL,
+            currency_code TEXT NULL,
+            role CHARACTER VARYING(20) NULL,
+            app_id UUID NOT NULL,
+            email_verified BOOLEAN NULL DEFAULT false,
+            CONSTRAINT ws_users_pkey PRIMARY KEY (user_id)
           );
           
           -- Habilitar RLS
-          ALTER TABLE ws_profiles ENABLE ROW LEVEL SECURITY;
+          ALTER TABLE ws_users ENABLE ROW LEVEL SECURITY;
           
           -- Crear política para permitir todas las operaciones
-          DROP POLICY IF EXISTS "Allow all operations on ws_profiles" ON ws_profiles;
-          CREATE POLICY "Allow all operations on ws_profiles" ON ws_profiles FOR ALL USING (true);
+          DROP POLICY IF EXISTS "Allow all operations on ws_users" ON ws_users;
+          CREATE POLICY "Allow all operations on ws_users" ON ws_users FOR ALL USING (true);
         `
       });
 
@@ -39,11 +46,11 @@ export const setupDatabase = async () => {
         return { success: false, error: createError };
       }
 
-      console.log('Table ws_profiles created successfully');
+      console.log('Table ws_users created successfully');
       return { success: true };
     }
 
-    console.log('Table ws_profiles already exists');
+    console.log('Table ws_users already exists');
     return { success: true };
   } catch (error) {
     console.error('Error in setupDatabase:', error);
@@ -54,7 +61,7 @@ export const setupDatabase = async () => {
 export const checkDatabaseConnection = async () => {
   try {
     const { data, error } = await supabase
-      .from('ws_profiles')
+      .from('ws_users')
       .select('count')
       .limit(1);
 

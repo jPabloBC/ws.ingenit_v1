@@ -1,27 +1,16 @@
 'use client';
-
 import { useState, useEffect } from 'react';
+import { Package, AlertTriangle, Filter, Search, Plus, Globe, Edit, Trash2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
 import { getProducts, deleteProduct } from '@/services/supabase/products';
 import { getCategories } from '@/services/supabase/categories';
-import { canAddProduct } from '@/services/supabase/subscriptions';
-import { formatCurrency } from '@/lib/currency';
-import { 
-  Plus, 
-  Search, 
-  Filter, 
-  Edit, 
-  Trash2, 
-  Package,
-  AlertTriangle
-} from 'lucide-react';
 import toast from 'react-hot-toast';
+import { importChileProducts, importProductByBarcode } from '@/services/integrations/openFoodFacts';
 
 interface Product {
   id: string;
@@ -43,14 +32,15 @@ interface Product {
 
 export default function Inventory() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { storeConfig, loading: storeLoading } = useStore();
+  const { user, userRole } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showLowStock, setShowLowStock] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [barcode, setBarcode] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -58,21 +48,28 @@ export default function Inventory() {
       return;
     }
 
-    if (storeLoading) {
-      return;
-    }
-
-    if (!storeConfig) {
-      router.push('/select-store');
-      return;
-    }
-
     loadData();
-  }, [user, storeConfig, storeLoading]);
+  }, [user]);
+
+  // Recargar datos cuando la página se vuelve visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user) {
+        console.log('Página visible, recargando inventario...');
+        loadData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user]);
 
   const loadData = async () => {
     try {
       setLoading(true);
+      // Limpiar estado antes de cargar
+      setProducts([]);
+      setCategories([]);
       const [productsData, categoriesData] = await Promise.all([
         getProducts(),
         getCategories()
@@ -115,10 +112,17 @@ export default function Inventory() {
     return matchesSearch && matchesCategory && matchesLowStock;
   });
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP'
+    }).format(amount);
+  };
+
   const lowStockCount = products.filter(p => p.stock <= p.min_stock).length;
   const outOfStockCount = products.filter(p => p.stock === 0).length;
 
-  if (storeLoading || loading) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -126,36 +130,95 @@ export default function Inventory() {
     );
   }
 
-  if (!storeConfig) {
-    return null;
-  }
-
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="w-full max-w-8xl mx-auto px-3 md:px-4 lg:px-4 py-3 md:py-4 space-y-5">
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Inventario</h1>
             <p className="text-gray-600">Gestiona tus productos y stock</p>
           </div>
-          <Button 
-            onClick={async () => {
-              if (!user) return;
-              
-              const { can, error } = await canAddProduct(user.id);
-              if (!can) {
-                toast.error(error || 'No puedes agregar más productos');
-                router.push('/subscription');
-                return;
-              }
-              
-              router.push('/inventory/add');
-            }}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Agregar Producto
-          </Button>
+          <div className="flex gap-2">
+            <div className="hidden md:flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Código de barras"
+                value={barcode}
+                onChange={(e) => setBarcode(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+              />
+              <Button
+                variant="outline"
+                disabled={importing || !barcode.trim()}
+                onClick={async () => {
+                  if (!user) return;
+                  try {
+                    setImporting(true);
+                    toast.loading('Buscando producto por código...', { id: 'off-barcode' });
+                    const res = await importProductByBarcode(user.id, barcode.trim());
+                    toast.dismiss('off-barcode');
+                    if (res.success) {
+                      toast.success('Producto importado');
+                      setBarcode('');
+                      await loadData();
+                    } else {
+                      toast.error(res.reason || 'No se pudo importar');
+                    }
+                  } catch {
+                    toast.dismiss('off-barcode');
+                    toast.error('Error al importar por código');
+                  } finally {
+                    setImporting(false);
+                  }
+                }}
+              >
+                Buscar por código
+              </Button>
+            </div>
+            <Button 
+              onClick={async () => {
+                if (!user) return;
+                
+                // TODO: Add usage check
+                
+                router.push('/inventory/add');
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Agregar Producto
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push('/inventory/aggregator')}
+              className="flex items-center space-x-2"
+            >
+              <Globe className="h-4 w-4" />
+              <span className="hidden md:inline">Agregador</span>
+            </Button>
+            <Button
+              variant="outline"
+              disabled={importing}
+              onClick={async () => {
+                if (!user) return;
+                try {
+                  setImporting(true);
+                  toast.loading('Importando productos desde OFF...', { id: 'off' });
+                  const result = await importChileProducts(user.id, 10);
+                  toast.dismiss('off');
+                  toast.success(`Importados: ${result.imported}, Omitidos: ${result.skipped}, Errores: ${result.errors}`);
+                  await loadData();
+                } catch {
+                  toast.dismiss('off');
+                  toast.error('Error al importar productos');
+                } finally {
+                  setImporting(false);
+                }
+              }}
+            >
+              Importar OFF (CL)
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}

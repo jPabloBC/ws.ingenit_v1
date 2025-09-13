@@ -1,35 +1,18 @@
 'use client';
-
 import { useState, useEffect } from 'react';
+import { ArrowLeft, Package, Save } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter, useParams } from 'next/navigation';
 import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
-import { getProduct, updateProduct } from '@/services/supabase/products';
+import { getProduct, updateProduct, Product } from '@/services/supabase/products';
 import { getCategories } from '@/services/supabase/categories';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Save, Package, Trash2 } from 'lucide-react';
-
 interface Category {
   id: string;
   name: string;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  sku: string;
-  price: number;
-  cost: number;
-  stock: number;
-  min_stock: number;
-  category_id: string | null;
-  supplier_id: string | null;
-  image_url: string;
 }
 
 export default function EditProductPage() {
@@ -38,7 +21,7 @@ export default function EditProductPage() {
   const productId = params.id as string;
   
   const { user } = useAuth();
-  const { storeConfig } = useStore();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -117,15 +100,20 @@ export default function EditProductPage() {
         cost: parseFloat(formData.cost) || 0,
         stock: parseInt(formData.stock) || 0,
         min_stock: parseInt(formData.min_stock) || 0,
-        category_id: formData.category_id || null,
-        supplier_id: formData.supplier_id || null
+        category_id: formData.category_id || undefined,
+        supplier_id: formData.supplier_id || undefined
       };
 
-      const { error } = await updateProduct(productId, productData);
+      if (!user) {
+        toast.error('Debes iniciar sesión para actualizar productos');
+        return;
+      }
+      
+      const { error } = await updateProduct(productId, productData, user.id);
 
       if (error) {
         console.error('Error updating product:', error);
-        toast.error('Error al actualizar el producto: ' + error.message);
+        toast.error('Error al actualizar el producto: ' + error);
         return;
       }
 

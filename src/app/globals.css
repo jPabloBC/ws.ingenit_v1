@@ -1,26 +1,41 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light only;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html, body { 
+  overflow-x: hidden; 
+  margin: 0;
+  padding: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Global visual baseline */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+  body {
+    @apply bg-gray10 text-gray2 font-body;
+    margin: 0;
+    padding: 0;
+  }
+  h1 { @apply font-title text-blue1 font-bold; }
+  h2 { @apply font-title text-blue1 font-semibold; }
+  h3 { @apply font-title text-blue1 font-semibold; }
+  h4 { @apply font-title text-blue1; }
+  a { @apply text-blue8 hover:text-blue6 underline-offset-4; }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Reusable layout helpers */
+@layer components {
+  .container-default { @apply container mx-auto px-4 md:px-6 lg:px-8; }
+  .card-surface { @apply bg-white rounded-xl shadow-sm; }
+  .section { @apply py-10 md:py-14; }
+  .input-field { @apply w-full rounded-md border border-gray8 bg-white px-3 py-2 text-gray2 placeholder-gray6 focus:outline-none focus:ring-2 focus:ring-blue8 focus:border-blue8; }
+  .btn-primary { @apply inline-flex items-center justify-center rounded-lg bg-blue8 px-4 py-2 font-medium text-white hover:bg-blue6 transition-colors; }
+  .btn-outline { @apply inline-flex items-center justify-center rounded-lg border border-blue8 px-4 py-2 text-blue8 hover:bg-blue15 transition-colors; }
 }

@@ -1,16 +1,14 @@
 'use client';
-
 import { useState, useEffect } from 'react';
+import { Plus, Search, Tag, Edit, Trash2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
 import { getCategories, deleteCategory } from '@/services/supabase/categories';
 import toast from 'react-hot-toast';
-import { Plus, Tag, Search, Edit, Trash2 } from 'lucide-react';
 
 interface Category {
   id: string;
@@ -23,7 +21,7 @@ interface Category {
 export default function CategoriesPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { storeConfig } = useStore();
+
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,7 +33,8 @@ export default function CategoriesPage() {
   const loadCategories = async () => {
     try {
       setLoading(true);
-      const categoriesData = await getCategories();
+      const storeType = (typeof window !== 'undefined') ? localStorage.getItem('selectedStoreType') || undefined : undefined;
+      const categoriesData = await getCategories(storeType);
       setCategories(categoriesData || []);
     } catch (error) {
       console.error('Error loading categories:', error);
@@ -88,8 +87,7 @@ export default function CategoriesPage() {
             <h1 className="text-2xl font-bold text-gray-900">Categorías</h1>
             <p className="text-gray-600">Organiza tus productos por categorías</p>
           </div>
-          <Button
-            onClick={() => router.push('/categories/add')}
+          <Button             onClick={() => router.push('/categories/add')}
             className="bg-blue-600 hover:bg-blue-700"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -137,8 +135,7 @@ export default function CategoriesPage() {
                     : 'Aún no se han creado categorías'
                   }
                 </p>
-                <Button
-                  onClick={() => router.push('/categories/add')}
+                <Button                   onClick={() => router.push('/categories/add')}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -156,15 +153,13 @@ export default function CategoriesPage() {
                           <CardTitle className="text-lg">{category.name}</CardTitle>
                         </div>
                         <div className="flex space-x-1">
-                          <Button
-                            onClick={() => router.push(`/categories/edit/${category.id}`)}
+                          <Button                             onClick={() => router.push(`/categories/edit/${category.id}`)}
                             size="sm"
                             variant="outline"
                           >
                             <Edit className="h-3 w-3" />
                           </Button>
-                          <Button
-                            onClick={() => handleDeleteCategory(category.id)}
+                          <Button                             onClick={() => handleDeleteCategory(category.id)}
                             size="sm"
                             variant="destructive"
                           >

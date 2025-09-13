@@ -9,15 +9,15 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = 'default', size = 'default', children, ...props }, ref) => {
-    const baseClasses = 'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background';
+    const baseClasses = 'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
 
     const variants = {
-      default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-      destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-      outline: 'border border-input hover:bg-accent hover:text-accent-foreground',
-      secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-      ghost: 'hover:bg-accent hover:text-accent-foreground',
-      link: 'underline-offset-4 hover:underline text-primary'
+      default: 'bg-blue8 text-white hover:bg-blue6 focus-visible:ring-blue8',
+      destructive: 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600',
+      outline: 'border border-blue8 text-blue8 hover:bg-blue15 focus-visible:ring-blue8',
+      secondary: 'bg-gray5 text-gray2 hover:bg-gray4 focus-visible:ring-gray5',
+      ghost: 'text-gray2 hover:text-blue8 hover:bg-blue15 focus-visible:ring-blue8',
+      link: 'underline-offset-4 hover:underline text-blue8'
     };
 
     const sizes = {

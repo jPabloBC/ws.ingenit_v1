@@ -1,4 +1,4 @@
-import { supabase } from './client';
+import { supabaseAdmin as supabase } from './admin';
 
 export interface Category {
   id: string;
@@ -13,6 +13,7 @@ export interface CreateCategoryData {
   name: string;
   description: string;
   color: string;
+  store_type?: string;
 }
 
 export interface UpdateCategoryData {
@@ -21,21 +22,31 @@ export interface UpdateCategoryData {
   color?: string;
 }
 
-export const getCategories = async (): Promise<Category[]> => {
+export const getCategories = async (storeType?: string): Promise<Category[]> => {
   try {
-    console.log('Fetching categories...');
+    console.log('Fetching categories for storeType:', storeType);
+    console.log('StoreType is truthy:', !!storeType);
     
-    const { data, error } = await supabase
-      .from('ws_categories')
-      .select('*')
-      .order('name', { ascending: true });
+    let query = supabase.from('ws_categories').select('*').order('name', { ascending: true });
+    
+    if (storeType) {
+      console.log('Applying filter for storeType:', storeType);
+      query = query.eq('store_type', storeType);
+    } else {
+      console.log('No storeType provided, fetching all categories');
+    }
+    
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching categories:', error);
       throw error;
     }
 
-    console.log('Categories fetched successfully:', data?.length || 0);
+    console.log('Categories fetched successfully:', data?.length || 0, 'for storeType:', storeType);
+    if (storeType && data) {
+      console.log('Categories found for', storeType, ':', data.map(c => `${c.name} (${c.store_type})`).join(', '));
+    }
     return data || [];
   } catch (error) {
     console.error('Error in getCategories:', error);

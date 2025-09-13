@@ -1,18 +1,14 @@
 'use client';
-
 import { useState, useEffect } from 'react';
+import { Plus, ClipboardList, Clock, CheckCircle, Search, Filter, Eye, XCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import QuickStat from '@/components/ui/QuickStat';
 import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
-import { formatCurrency } from '@/lib/currency';
 import toast from 'react-hot-toast';
-import { ClipboardList, Plus, Search, Filter, Eye, Clock, CheckCircle, XCircle } from 'lucide-react';
-
 interface Order {
   id: string;
   order_number: string;
@@ -40,7 +36,7 @@ interface OrderItem {
 export default function OrdersPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { storeConfig } = useStore();
+
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<Order[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -57,6 +53,13 @@ export default function OrdersPage() {
   useEffect(() => {
     loadOrders();
   }, []);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP'
+    }).format(amount);
+  };
 
   const loadOrders = async () => {
     try {
@@ -146,7 +149,7 @@ export default function OrdersPage() {
       ));
       toast.success('Estado de orden actualizado');
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error updating order status:', error);
       toast.error('Error al actualizar el estado');
     }
   };
@@ -213,8 +216,7 @@ export default function OrdersPage() {
             <h1 className="text-2xl font-bold text-gray-900">Gestión de Órdenes</h1>
             <p className="text-gray-600">Controla las órdenes del restaurante</p>
           </div>
-          <Button
-            onClick={() => router.push('/orders/new')}
+          <Button             onClick={() => router.push('/orders/new')}
             className="bg-blue-600 hover:bg-blue-700"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -313,8 +315,7 @@ export default function OrdersPage() {
                   : 'Aún no se han creado órdenes'
                 }
               </p>
-              <Button
-                onClick={() => router.push('/orders/new')}
+              <Button                 onClick={() => router.push('/orders/new')}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -378,8 +379,7 @@ export default function OrdersPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      onClick={() => router.push(`/orders/${order.id}`)}
+                    <Button                       onClick={() => router.push(`/orders/${order.id}`)}
                       size="sm"
                       variant="outline"
                     >
@@ -388,8 +388,7 @@ export default function OrdersPage() {
                     </Button>
                     
                     {order.status === 'pending' && (
-                      <Button
-                        onClick={() => handleStatusChange(order.id, 'preparing')}
+                      <Button                         onClick={() => handleStatusChange(order.id, 'preparing')}
                         size="sm"
                         className="bg-blue-600 hover:bg-blue-700"
                       >
@@ -398,8 +397,7 @@ export default function OrdersPage() {
                     )}
                     
                     {order.status === 'preparing' && (
-                      <Button
-                        onClick={() => handleStatusChange(order.id, 'ready')}
+                      <Button                         onClick={() => handleStatusChange(order.id, 'ready')}
                         size="sm"
                         className="bg-green-600 hover:bg-green-700"
                       >
@@ -408,8 +406,7 @@ export default function OrdersPage() {
                     )}
                     
                     {order.status === 'ready' && (
-                      <Button
-                        onClick={() => handleStatusChange(order.id, 'delivered')}
+                      <Button                         onClick={() => handleStatusChange(order.id, 'delivered')}
                         size="sm"
                         className="bg-gray-600 hover:bg-gray-700"
                       >
@@ -418,8 +415,7 @@ export default function OrdersPage() {
                     )}
                     
                     {(order.status === 'pending' || order.status === 'preparing') && (
-                      <Button
-                        onClick={() => handleStatusChange(order.id, 'cancelled')}
+                      <Button                         onClick={() => handleStatusChange(order.id, 'cancelled')}
                         size="sm"
                         variant="destructive"
                       >

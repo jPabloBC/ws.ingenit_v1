@@ -1,11 +1,9 @@
-import { supabase } from './client';
-import { canAddProduct, canAddStock } from './subscriptions';
-
 export interface Product {
   id: string;
   name: string;
   description: string;
   sku: string;
+  barcode?: string | null;
   price: number;
   cost: number;
   stock: number;
@@ -13,6 +11,21 @@ export interface Product {
   category_id: string;
   supplier_id: string | null;
   image_url: string | null;
+  brand?: string | null;
+  user_id?: string | null;
+  store_type?: string | null;
+  // Extended OFF metadata (optional)
+  general_name?: string | null;
+  quantity?: string | null;
+  packaging?: string | null;
+  labels?: string[] | null;
+  categories_list?: string[] | null;
+  countries_sold?: string[] | null;
+  origin_ingredients?: string | null;
+  manufacturing_places?: string | null;
+  traceability_code?: string | null;
+  official_url?: string | null;
+  off_metadata?: any | null;
   created_at: string;
   updated_at: string;
 }
@@ -20,18 +33,36 @@ export interface Product {
 export interface CreateProductData {
   name: string;
   description: string;
+  barcode?: string;
+  brand?: string;
+  sku?: string;
   price: number;
   cost: number;
   stock: number;
   min_stock: number;
-  category_id: string;
+  category_id?: string;
   supplier_id?: string;
   image_url?: string;
+  general_name?: string;
+  quantity?: string;
+  packaging?: string;
+  labels?: string[];
+  categories_list?: string[];
+  countries_sold?: string[];
+  origin_ingredients?: string;
+  manufacturing_places?: string;
+  traceability_code?: string;
+  official_url?: string;
+  off_metadata?: any;
+  user_id?: string;
+  store_type?: string;
 }
 
 export interface UpdateProductData {
   name?: string;
   description?: string;
+  barcode?: string | null;
+  brand?: string | null;
   price?: number;
   cost?: number;
   stock?: number;
@@ -39,11 +70,26 @@ export interface UpdateProductData {
   category_id?: string;
   supplier_id?: string;
   image_url?: string;
+  general_name?: string | null;
+  quantity?: string | null;
+  packaging?: string | null;
+  labels?: string[] | null;
+  categories_list?: string[] | null;
+  countries_sold?: string[] | null;
+  origin_ingredients?: string | null;
+  manufacturing_places?: string | null;
+  traceability_code?: string | null;
+  official_url?: string | null;
+  off_metadata?: any | null;
 }
 
 export const getProducts = async (): Promise<Product[]> => {
   try {
     console.log('Fetching products...');
+    
+    // Primero verificar si el usuario está autenticado
+    const { data: { user } } = await supabase.auth.getUser();
+    console.log('Current user:', user?.id);
     
     const { data, error } = await supabase
       .from('ws_products')
@@ -60,6 +106,7 @@ export const getProducts = async (): Promise<Product[]> => {
     }
 
     console.log('Products fetched successfully:', data?.length || 0);
+    console.log('Sample product:', data?.[0]);
     return data || [];
   } catch (error) {
     console.error('Error in getProducts:', error);
@@ -91,25 +138,37 @@ export const getProduct = async (id: string): Promise<Product | null> => {
   }
 };
 
-export const createProduct = async (productData: CreateProductData, userId: string): Promise<{ success: boolean; data?: Product; error?: string }> => {
+export const createProduct = async (productData: CreateProductData, userId: string, storeType?: string): Promise<{ success: boolean; data?: Product; error?: string }> => {
   try {
     console.log('Creating product:', productData);
     
     // Verificar límites de suscripción
-    const { can, error: limitError } = await canAddProduct(userId);
-    if (!can) {
-      return { success: false, error: limitError };
+    const canAdd = await usageService.canAddProduct(userId);
+    if (!canAdd) {
+      return { success: false, error: 'No puedes agregar más productos. Actualiza tu plan.' };
     }
 
     // Verificar límite de stock por producto
-    const { can: canAddStockResult, error: stockError } = await canAddStock(userId, 0, productData.stock);
-    if (!canAddStockResult) {
-      return { success: false, error: stockError };
+    const userLimits = await usageService.getUserLimits(userId);
+    if (userLimits && userLimits.max_stock_per_product !== null) {
+      if (productData.stock > userLimits.max_stock_per_product) {
+        return { 
+          success: false, 
+          error: `El stock máximo permitido es ${userLimits.max_stock_per_product} unidades. Actualiza tu plan para aumentar el límite.` 
+        };
+      }
     }
+    
+    // Agregar user_id y store_type para la generación de SKU
+    const productDataWithUser = {
+      ...productData,
+      user_id: userId,
+      store_type: storeType || 'almacen' // Default si no se proporciona
+    };
     
     // Filtrar campos undefined para permitir que el trigger de SKU funcione
     const cleanData = Object.fromEntries(
-      Object.entries(productData).filter(([_, value]) => value !== undefined)
+      Object.entries(productDataWithUser).filter(([_, value]) => value !== undefined)
     );
 
     const { data, error } = await supabase
@@ -135,11 +194,13 @@ export const updateProduct = async (id: string, updates: UpdateProductData, user
   try {
     // Si se está actualizando el stock, verificar límites
     if (updates.stock !== undefined) {
-      const currentProduct = await getProduct(id);
-      if (currentProduct) {
-        const { can, error: stockError } = await canAddStock(userId, currentProduct.stock, updates.stock - currentProduct.stock);
-        if (!can) {
-          return { success: false, error: stockError };
+      const userLimits = await usageService.getUserLimits(userId);
+      if (userLimits && userLimits.max_stock_per_product !== null) {
+        if (updates.stock > userLimits.max_stock_per_product) {
+          return { 
+            success: false, 
+            error: `El stock máximo permitido es ${userLimits.max_stock_per_product} unidades. Actualiza tu plan para aumentar el límite.` 
+          };
         }
       }
     }
@@ -215,9 +276,9 @@ export const updateStock = async (id: string, quantity: number, userId: string):
     }
 
     // Verificar límite de stock por producto
-    const { can, error: stockError } = await canAddStock(userId, currentProduct.stock, quantity - currentProduct.stock);
-    if (!can) {
-      return { success: false, error: stockError };
+    const canAddStockResult = await usageService.canAddStock(userId);
+    if (!canAddStockResult) {
+      return { success: false, error: 'No puedes agregar más stock. Actualiza tu plan.' };
     }
 
     const { error } = await supabase

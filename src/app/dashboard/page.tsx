@@ -1,278 +1,316 @@
 'use client';
+import dynamic from 'next/dynamic';
+import { useState, useEffect } from 'react';
+import { AlertTriangle, Package, ShoppingCart, TrendingUp, Users, Store } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import Layout from "@/components/layout/Layout";
+import QuickStat from "@/components/ui/QuickStat";
+import WelcomeCard from "@/components/ui/WelcomeCard";
+import { getDatabaseStatus } from "@/lib/databaseCheck";
+import SecurityGuard from "@/components/SecurityGuard";
+import { supabase } from '@/services/supabase/client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import QuickStat from '@/components/ui/QuickStat';
-import WelcomeCard from '@/components/ui/WelcomeCard';
-import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
-import { getProducts } from '@/services/supabase/products';
-import { getSales } from '@/services/supabase/sales';
-import { getCustomers } from '@/services/supabase/customers';
-import { formatCurrency } from '@/lib/currency';
-import { 
-  Package, 
-  ShoppingCart, 
-  Users, 
-  DollarSign, 
-  TrendingUp, 
-  AlertTriangle,
-  Plus,
-  BarChart3
-} from 'lucide-react';
-import toast from 'react-hot-toast';
+function Dashboard() {
+  const { user, loading, userRole } = useAuth();
+  const [storeType, setStoreType] = useState<string>('restaurant');
+  const [stats, setStats] = useState({ products: 0, salesToday: 0, customers: 0, ordersToday: 0 });
+  const [recentSales, setRecentSales] = useState<Array<{ id: string; title: string; subtitle: string; amount: number }>>([]);
+  const [stockAlerts, setStockAlerts] = useState<Array<{ id: string; name: string; stock: number }>>([]);
 
-interface DashboardStats {
-  totalProducts: number;
-  totalSales: number;
-  totalCustomers: number;
-  totalRevenue: number;
-  lowStockProducts: number;
-  recentSales: any[];
-}
-
-export default function Dashboard() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { storeConfig, loading: storeLoading } = useStore();
-  const [stats, setStats] = useState<DashboardStats>({
-    totalProducts: 0,
-    totalSales: 0,
-    totalCustomers: 0,
-    totalRevenue: 0,
-    lowStockProducts: 0,
-    recentSales: []
-  });
-  const [loading, setLoading] = useState(true);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP'
+    }).format(amount);
+  };
 
   useEffect(() => {
-    if (!user) {
-      router.push('/login');
-      return;
+    if (!loading && !user) {
+      router.push("/login");
     }
+  }, [user, loading, router]);
 
-    if (storeLoading) {
-      return;
+  useEffect(() => {
+    if (!loading && user && !storeType) {
+      // Solo redirigir si el usuario está autenticado, no tiene store seleccionado
+      // y no es dev/admin (ellos no necesitan store config)
+      if (userRole !== 'dev' && userRole !== 'admin' && window.location.pathname !== '/select-store') {
+        router.push("/select-store");
+      }
     }
+  }, [user, loading, storeType, userRole, router]);
 
-    if (!storeConfig) {
-      router.push('/select-store');
-      return;
-    }
 
-    loadDashboardData();
-  }, [user, storeConfig, storeLoading]);
 
-  const loadDashboardData = async () => {
-    try {
-      setLoading(true);
-      
-      // Cargar datos en paralelo
-      const [products, sales, customers] = await Promise.all([
-        getProducts().catch(() => []),
-        getSales().catch(() => []),
-        getCustomers().catch(() => [])
-      ]);
-
-      // Calcular estadísticas
-      const totalRevenue = sales.reduce((sum, sale) => sum + sale.total_amount, 0);
-      const lowStockProducts = products.filter(p => p.stock <= p.min_stock).length;
-      const recentSales = sales.slice(0, 5);
-
-      setStats({
-        totalProducts: products.length,
-        totalSales: sales.length,
-        totalCustomers: customers.length,
-        totalRevenue,
-        lowStockProducts,
-        recentSales
+  // Verificar estado de la base de datos al cargar
+  useEffect(() => {
+    if (user) {
+      getDatabaseStatus().then(status => {
+        if (status.status === 'error') {
+          console.warn('⚠️ Problema con la base de datos:', status.message);
+        }
       });
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-      toast.error('Error al cargar los datos del dashboard');
-    } finally {
-      setLoading(false);
-    }
-  };
+      // Cargar datos reales
+      (async () => {
+        try {
+          // Productos
+          const { count: productsCount } = await supabase
+            .from('ws_products')
+            .select('id', { count: 'exact', head: true });
+          // Ventas de hoy
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const { data: salesTodayRows } = await supabase
+            .from('ws_sales')
+            .select('total_amount, created_at')
+            .gte('created_at', today.toISOString());
+          const salesToday = (salesTodayRows || []).reduce((sum: number, r:any) => sum + (r.total_amount||0), 0);
+          const ordersToday = (salesTodayRows || []).length;
+          // Clientes (si existe tabla)
+          let customers = 0;
+          try {
+            const { count: customersCount } = await supabase
+              .from('ws_customers')
+              .select('id', { count: 'exact', head: true });
+            customers = customersCount || 0;
+          } catch {}
+          setStats({ products: productsCount || 0, salesToday, customers, ordersToday });
 
-  const handleQuickAction = (action: string) => {
-    switch (action) {
-      case 'add-product':
-        router.push('/inventory/add');
-        break;
-      case 'new-sale':
-        router.push('/sales/new');
-        break;
-      case 'add-customer':
-        router.push('/customers/add');
-        break;
-      case 'view-reports':
-        router.push('/reports');
-        break;
-      default:
-        break;
-    }
-  };
+          // Ventas recientes
+          const { data: recent } = await supabase
+            .from('ws_sales')
+            .select('id,total_amount,created_at')
+            .order('created_at', { ascending: false })
+            .limit(3);
+          setRecentSales((recent||[]).map((r:any) => ({
+            id: r.id,
+            title: 'Venta',
+            subtitle: new Date(r.created_at).toLocaleString(),
+            amount: r.total_amount || 0,
+          })));
 
-  if (storeLoading || loading) {
+                      // Alertas de stock: stock <= min_stock
+            const { data: low } = await supabase
+              .from('ws_products')
+              .select('id,name,stock,min_stock')
+              .limit(5);
+            // Filtrar en el cliente para stock <= min_stock
+            const lowStockProducts = (low || []).filter((p: any) => p.stock <= p.min_stock);
+            setStockAlerts(lowStockProducts.map((p:any) => ({ id: p.id, name: p.name, stock: p.stock })));
+        } catch (e) {
+          console.warn('No se pudieron cargar métricas reales:', e);
+        }
+      })();
+    }
+  }, [user]);
+
+  // Recargar datos cuando la página se vuelve visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user && storeType) {
+        console.log('Página visible, recargando dashboard...');
+        // Recargar datos del dashboard
+        (async () => {
+          try {
+            // Productos
+            const { count: productsCount } = await supabase
+              .from('ws_products')
+              .select('id', { count: 'exact', head: true });
+            // Ventas de hoy
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const { data: salesTodayRows } = await supabase
+              .from('ws_sales')
+              .select('total_amount, created_at')
+              .gte('created_at', today.toISOString());
+            const salesToday = (salesTodayRows || []).reduce((sum: number, r:any) => sum + (r.total_amount||0), 0);
+            const ordersToday = (salesTodayRows || []).length;
+            // Clientes (si existe tabla)
+            let customers = 0;
+            try {
+              const { count: customersCount } = await supabase
+                .from('ws_customers')
+                .select('id', { count: 'exact', head: true });
+              customers = customersCount || 0;
+            } catch {}
+            setStats({ products: productsCount || 0, salesToday, customers, ordersToday });
+
+            // Ventas recientes
+            const { data: recent } = await supabase
+              .from('ws_sales')
+              .select('id,total_amount,created_at')
+              .order('created_at', { ascending: false })
+              .limit(3);
+            setRecentSales((recent||[]).map((r:any) => ({
+              id: r.id,
+              title: 'Venta',
+              subtitle: new Date(r.created_at).toLocaleString(),
+              amount: r.total_amount || 0,
+            })));
+
+            // Alertas de stock: stock <= min_stock
+            const { data: low } = await supabase
+              .from('ws_products')
+              .select('id,name,stock,min_stock')
+              .limit(5);
+            // Filtrar en el cliente para stock <= min_stock
+            const lowStockProducts = (low || []).filter((p: any) => p.stock <= p.min_stock);
+            setStockAlerts(lowStockProducts.map((p:any) => ({ id: p.id, name: p.name, stock: p.stock })));
+          } catch (e) {
+            console.warn('No se pudieron cargar métricas reales:', e);
+          }
+        })();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user, storeType]);
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
+      <Layout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+            <p className="mt-4 text-gray-600">Cargando...</p>
+          </div>
+        </div>
+      </Layout>
     );
   }
 
-  if (!storeConfig) {
+  if (!user) {
     return null;
   }
 
   return (
-    <Layout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600">Bienvenido a {storeConfig.name}</p>
+    <SecurityGuard>
+      <Layout showSidebar={true}>
+        <div className="p-6">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Dashboard
+          </h1>
+          <p className="text-gray-600">
+            Bienvenido, {user.email}
+          </p>
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <QuickStat
-            title="Total Productos"
-            value={stats.totalProducts}
-            icon={Package}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <QuickStat title="Productos" value={String(stats.products)} icon={Package} color="bg-blue-600 text-white" />
+          <QuickStat title="Ventas Hoy" value={formatCurrency(stats.salesToday)} icon={TrendingUp} color="bg-green-500 text-white" />
+          <QuickStat title="Clientes" value={String(stats.customers)} icon={Users} color="bg-purple-500 text-white" />
+          <QuickStat title="Órdenes" value={String(stats.ordersToday)} icon={ShoppingCart} color="bg-orange-500 text-white" />
+        </div>
+
+        {/* Welcome Card */}
+        <div className="mb-8">
+          <WelcomeCard
+            title="¡Bienvenido a Ingenit Store Manager!"
+            description="Tu plataforma completa para gestionar inventario, ventas y clientes. Comienza explorando las diferentes secciones desde el menú lateral."
+            icon={Store}
             color="blue"
-          />
-          <QuickStat
-            title="Total Ventas"
-            value={stats.totalSales}
-            icon={ShoppingCart}
-            color="green"
-          />
-          <QuickStat
-            title="Total Clientes"
-            value={stats.totalCustomers}
-            icon={Users}
-            color="purple"
-          />
-          <QuickStat
-            title="Ingresos Totales"
-            value={formatCurrency(stats.totalRevenue)}
-            icon={DollarSign}
-            color="orange"
           />
         </div>
 
-        {/* Alerts */}
-        {stats.lowStockProducts > 0 && (
-          <Card className="border-orange-200 bg-orange-50">
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-3">
-                <AlertTriangle className="h-5 w-5 text-orange-600" />
-                <div>
-                  <p className="text-sm font-medium text-orange-800">
-                    {stats.lowStockProducts} productos con stock bajo
-                  </p>
-                  <p className="text-xs text-orange-600">
-                    Revisa el inventario para reabastecer
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <WelcomeCard
-            title="Agregar Producto"
-            description="Registra un nuevo producto en el inventario"
-            icon={Plus}
-            color="blue"
-            onClick={() => handleQuickAction('add-product')}
-          />
-          <WelcomeCard
-            title="Nueva Venta"
-            description="Procesa una venta rápidamente"
-            icon={ShoppingCart}
-            color="green"
-            onClick={() => handleQuickAction('new-sale')}
-          />
-          <WelcomeCard
-            title="Agregar Cliente"
-            description="Registra un nuevo cliente"
-            icon={Users}
-            color="purple"
-            onClick={() => handleQuickAction('add-customer')}
-          />
-          <WelcomeCard
-            title="Ver Reportes"
-            description="Analiza el rendimiento del negocio"
-            icon={BarChart3}
-            color="orange"
-            onClick={() => handleQuickAction('view-reports')}
-          />
-        </div>
-
-        {/* Recent Sales */}
-        {stats.recentSales.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Ventas Recientes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {stats.recentSales.map((sale) => (
-                  <div key={sale.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        Venta #{sale.sale_number}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {new Date(sale.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium text-green-600">
-                        {formatCurrency(sale.total_amount)}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {sale.payment_method}
-                      </p>
-                    </div>
+        {/* Recent Activity & Alerts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Recent Sales */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Ventas Recientes
+            </h3>
+            <div className="space-y-4">
+              {recentSales.length === 0 ? (
+                <p className="text-sm text-gray-500">Aún no hay ventas.</p>
+              ) : recentSales.map(s => (
+                <div key={s.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                  <div>
+                    <p className="font-medium text-gray-900">{s.title}</p>
+                    <p className="text-sm text-gray-500">{s.subtitle}</p>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Store Modules */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Módulos Disponibles</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {storeConfig.modules.slice(1).map((module) => (
-                <div
-                  key={module.path}
-                  className="p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-colors"
-                  onClick={() => router.push(module.path)}
-                >
-                  <h3 className="font-medium text-gray-900">{module.name}</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Gestiona {module.name.toLowerCase()}
-                  </p>
+                  <span className="text-green-600 font-semibold">{formatCurrency(s.amount)}</span>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+
+          {/* Low Stock Alerts */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Alertas de Stock
+            </h3>
+            <div className="space-y-4">
+              {stockAlerts.length === 0 ? (
+                <p className="text-sm text-gray-500">Sin alertas de stock.</p>
+              ) : stockAlerts.map(p => (
+                <div key={p.id} className="flex items-center p-3 bg-red-50 border border-red-200 rounded-md">
+                  <AlertTriangle className="h-5 w-5 text-red-600 mr-3" />
+                  <div>
+                    <p className="font-medium text-red-800">{p.name} - Stock bajo</p>
+                    <p className="text-sm text-red-600">Quedan {p.stock} unidades</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Available Modules */}
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Módulos Disponibles
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
+              <div className="flex items-center space-x-3">
+                <Package className="h-8 w-8 text-blue-600" />
+                <div>
+                  <h4 className="font-medium text-gray-900">Inventario</h4>
+                  <p className="text-sm text-gray-500">Gestionar productos</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
+              <div className="flex items-center space-x-3">
+                <ShoppingCart className="h-8 w-8 text-green-600" />
+                <div>
+                  <h4 className="font-medium text-gray-900">Ventas</h4>
+                  <p className="text-sm text-gray-500">Procesar ventas</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
+              <div className="flex items-center space-x-3">
+                <Users className="h-8 w-8 text-purple-600" />
+                <div>
+                  <h4 className="font-medium text-gray-900">Clientes</h4>
+                  <p className="text-sm text-gray-500">Gestionar clientes</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
+              <div className="flex items-center space-x-3">
+                <TrendingUp className="h-8 w-8 text-orange-600" />
+                <div>
+                  <h4 className="font-medium text-gray-900">Reportes</h4>
+                  <p className="text-sm text-gray-500">Ver estadísticas</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </Layout>
+    </SecurityGuard>
   );
-} 
+}
+
+export default dynamic(() => Promise.resolve(Dashboard), {
+  ssr: false
+}); 

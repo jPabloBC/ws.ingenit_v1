@@ -1,40 +1,34 @@
-import { Card, CardContent, CardHeader, CardTitle } from './card';
 import { LucideIcon } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+// Removido: import no usado
 
 interface QuickStatProps {
   title: string;
   value: string | number;
   icon: LucideIcon;
-  color?: 'blue' | 'green' | 'red' | 'yellow' | 'purple' | 'orange';
-  change?: {
-    value: number;
-    type: 'increase' | 'decrease';
-  };
+  color?: string;
+  change?: string;
+  changeType?: 'positive' | 'negative';
 }
 
-export default function QuickStat({ title, value, icon: Icon, color = 'blue', change }: QuickStatProps) {
-  const colorClasses = {
-    blue: 'text-blue-600',
-    green: 'text-green-600',
-    red: 'text-red-600',
-    yellow: 'text-yellow-600',
-    purple: 'text-purple-600',
-    orange: 'text-orange-600'
-  };
-
+export default function QuickStat({ title, value, icon: Icon, color = 'bg-gold7 text-gold3', change, changeType }: QuickStatProps) {
   return (
-    <Card>
+    <Card className="border-green5">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">
+        <CardTitle className="text-sm font-medium text-green font-title">
           {title}
         </CardTitle>
-        <Icon className={`h-4 w-4 ${colorClasses[color]}`} />
+        <div className={`p-2 rounded-lg ${color}`}>
+          <Icon className="h-4 w-4" />
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-2xl font-bold text-green font-title">{value}</div>
         {change && (
-          <p className={`text-xs ${change.type === 'increase' ? 'text-green-600' : 'text-red-600'}`}>
-            {change.type === 'increase' ? '+' : '-'}{change.value}%
+          <p className={`text-xs font-body ${
+            changeType === 'positive' ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {change}
           </p>
         )}
       </CardContent>

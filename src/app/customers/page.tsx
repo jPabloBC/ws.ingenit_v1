@@ -1,24 +1,23 @@
 'use client';
-
+import dynamic from 'next/dynamic';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Layout from '@/components/layout/Layout';
+import { Plus, Users, UserPlus, Search, Mail, Phone } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useRouter } from 'next/navigation';
+import CustomerLayout from '@/components/layout/CustomerLayout';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import QuickStat from '@/components/ui/QuickStat';
 import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
 import { getCustomers, deleteCustomer } from '@/services/supabase/customers';
 import toast from 'react-hot-toast';
-import { Plus, Users, UserPlus, Phone, Mail, Search, Filter } from 'lucide-react';
-
 import { Customer } from '@/services/supabase/customers';
+import SecurityGuard from '@/components/SecurityGuard';
 
-export default function CustomersPage() {
+function CustomersPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { storeConfig } = useStore();
+
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -87,25 +86,27 @@ export default function CustomersPage() {
 
   if (!user) {
     return (
-      <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <LoadingSpinner />
-        </div>
-      </Layout>
+      <SecurityGuard>
+        <CustomerLayout>
+          <div className="flex items-center justify-center min-h-screen">
+            <LoadingSpinner />
+          </div>
+        </CustomerLayout>
+      </SecurityGuard>
     );
   }
 
   return (
-    <Layout>
-      <div className="p-6">
+    <SecurityGuard>
+      <CustomerLayout>
+        <div className="p-6">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Clientes</h1>
             <p className="text-gray-600">Gestiona tu base de datos de clientes</p>
           </div>
-          <Button
-            onClick={() => router.push('/customers/add')}
+          <Button             onClick={() => router.push('/customers/add')}
             className="bg-blue-600 hover:bg-blue-700"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -181,8 +182,7 @@ export default function CustomersPage() {
                     : 'Aún no se han registrado clientes'
                   }
                 </p>
-                <Button
-                  onClick={() => router.push('/customers/add')}
+                <Button                   onClick={() => router.push('/customers/add')}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -232,22 +232,19 @@ export default function CustomersPage() {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex justify-end space-x-2">
-                            <Button
-                              onClick={() => router.push(`/customers/${customer.id}`)}
+                            <Button                               onClick={() => router.push(`/customers/${customer.id}`)}
                               size="sm"
                               variant="outline"
                             >
                               Ver
                             </Button>
-                            <Button
-                              onClick={() => router.push(`/customers/edit/${customer.id}`)}
+                            <Button                               onClick={() => router.push(`/customers/edit/${customer.id}`)}
                               size="sm"
                               variant="outline"
                             >
                               Editar
                             </Button>
-                            <Button
-                              onClick={() => handleDeleteCustomer(customer.id)}
+                            <Button                               onClick={() => handleDeleteCustomer(customer.id)}
                               size="sm"
                               variant="destructive"
                             >
@@ -263,7 +260,12 @@ export default function CustomersPage() {
             )}
           </CardContent>
         </Card>
-      </div>
-    </Layout>
+        </div>
+      </CustomerLayout>
+    </SecurityGuard>
   );
-} 
+}
+
+export default dynamic(() => Promise.resolve(CustomersPage), {
+  ssr: false
+}); 

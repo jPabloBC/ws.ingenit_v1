@@ -1,9 +1,7 @@
 'use client';
-
 import { useState } from 'react';
-import { Upload, X, Image as ImageIcon } from 'lucide-react';
+import { Upload, X } from 'lucide-react';
 import { supabase } from '@/services/supabase/client';
-import { useStore } from '@/contexts/StoreContext';
 import toast from 'react-hot-toast';
 
 interface ImageUploadProps {
@@ -15,7 +13,7 @@ interface ImageUploadProps {
 export default function ImageUpload({ onImageUpload, currentImage, className = '' }: ImageUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(currentImage || null);
-  const { storeType } = useStore();
+  const [storeType] = useState('restaurant'); // TODO: Implement store type logic
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {

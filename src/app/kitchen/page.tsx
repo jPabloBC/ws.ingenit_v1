@@ -1,17 +1,15 @@
 'use client';
-
 import { useState, useEffect } from 'react';
+import { ChefHat, Clock, Timer, CheckCircle, Play, Eye } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import QuickStat from '@/components/ui/QuickStat';
 import { useAuth } from '@/contexts/AuthContext';
-import { useStore } from '@/contexts/StoreContext';
-import { formatCurrency } from '@/lib/currency';
 import toast from 'react-hot-toast';
-import { ChefHat, Clock, CheckCircle, AlertTriangle, Timer, Eye, Play, Pause } from 'lucide-react';
+import SecurityGuard from '@/components/SecurityGuard';
 
 interface KitchenOrder {
   id: string;
@@ -39,7 +37,7 @@ interface KitchenItem {
 export default function KitchenPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { storeConfig } = useStore();
+
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [filterStatus, setFilterStatus] = useState('all');
@@ -58,6 +56,13 @@ export default function KitchenPage() {
     const interval = setInterval(loadKitchenOrders, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP'
+    }).format(amount);
+  };
 
   const loadKitchenOrders = async () => {
     try {
@@ -150,7 +155,7 @@ export default function KitchenPage() {
       ));
       toast.success('Estado del item actualizado');
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error updating item status:', error);
       toast.error('Error al actualizar el estado');
     }
   };
@@ -164,7 +169,7 @@ export default function KitchenPage() {
       ));
       toast.success('Estado de orden actualizado');
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error updating order status:', error);
       toast.error('Error al actualizar el estado');
     }
   };
@@ -242,16 +247,19 @@ export default function KitchenPage() {
 
   if (!user) {
     return (
-      <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <LoadingSpinner />
-        </div>
-      </Layout>
+      <SecurityGuard>
+        <Layout>
+          <div className="flex items-center justify-center min-h-screen">
+            <LoadingSpinner />
+          </div>
+        </Layout>
+      </SecurityGuard>
     );
   }
 
   return (
-    <Layout>
+    <SecurityGuard>
+      <Layout>
       <div className="p-6">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
@@ -404,8 +412,7 @@ export default function KitchenPage() {
                             </span>
                             <div className="flex gap-1">
                               {item.status === 'pending' && (
-                                <Button
-                                  onClick={() => handleItemStatusChange(order.id, item.id, 'preparing')}
+                                <Button                                   onClick={() => handleItemStatusChange(order.id, item.id, 'preparing')}
                                   size="sm"
                                   className="bg-blue-600 hover:bg-blue-700"
                                 >
@@ -413,8 +420,7 @@ export default function KitchenPage() {
                                 </Button>
                               )}
                               {item.status === 'preparing' && (
-                                <Button
-                                  onClick={() => handleItemStatusChange(order.id, item.id, 'ready')}
+                                <Button                                   onClick={() => handleItemStatusChange(order.id, item.id, 'ready')}
                                   size="sm"
                                   className="bg-green-600 hover:bg-green-700"
                                 >
@@ -434,8 +440,7 @@ export default function KitchenPage() {
                     </span>
                     <div className="flex gap-2">
                       {order.status === 'pending' && (
-                        <Button
-                          onClick={() => handleOrderStatusChange(order.id, 'preparing')}
+                        <Button                           onClick={() => handleOrderStatusChange(order.id, 'preparing')}
                           size="sm"
                           className="bg-blue-600 hover:bg-blue-700"
                         >
@@ -443,16 +448,14 @@ export default function KitchenPage() {
                         </Button>
                       )}
                       {order.status === 'preparing' && order.items.every(item => item.status === 'ready') && (
-                        <Button
-                          onClick={() => handleOrderStatusChange(order.id, 'ready')}
+                        <Button                           onClick={() => handleOrderStatusChange(order.id, 'ready')}
                           size="sm"
                           className="bg-green-600 hover:bg-green-700"
                         >
                           Marcar Lista
                         </Button>
                       )}
-                      <Button
-                        onClick={() => router.push(`/orders/${order.id}`)}
+                      <Button                         onClick={() => router.push(`/orders/${order.id}`)}
                         size="sm"
                         variant="outline"
                       >
@@ -467,6 +470,7 @@ export default function KitchenPage() {
           )}
         </div>
       </div>
-    </Layout>
+      </Layout>
+    </SecurityGuard>
   );
 } 
