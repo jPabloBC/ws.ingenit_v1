@@ -4,13 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/services/supabase/client';
 import { sendVerificationEmail } from '@/services/emailService';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 import toast from "react-hot-toast";
 import PageLayout from "@/components/layout/PageLayout";
 import Section from "@/components/ui/Section";
@@ -70,48 +65,63 @@ export default function Register() {
     setCheckingUserStatus(true);
     
     try {
-      // Verificar si hay un step específico en la URL
-      const stepParam = searchParams.get('step');
-      if (stepParam && ['verification', 'business', 'platform'].includes(stepParam)) {
-        setCurrentStep(stepParam as RegistrationStep);
-        setCheckingUserStatus(false);
-        return;
-      }
-
-      const { data: { user } } = await supabase.auth.getUser();
+      // Delay mínimo para mostrar el loader
+      await new Promise(resolve => setTimeout(resolve, 1200));
       
-      if (user) {
-        // Verificar si el email está verificado
-        const { data: verificationData, error } = await supabase
-          .from('ws_email_verifications')
-          .select('verified')
+      // Verificar si hay parámetros de email en la URL
+      const emailFromParams = searchParams.get('email');
+      
+      if (emailFromParams) {
+        // Si hay email en parámetros, verificar su estado directamente
+        setUserEmail(emailFromParams);
+        
+        const { data: userData } = await supabase
+          .from('ws_users')
+          .select('store_types, email_verified')
+          .eq('email', emailFromParams)
+          .single();
+
+        if (userData?.store_types && userData.store_types.length > 0) {
+          // Ya completó todo, redirigir al dashboard
+          toast.success("¡Bienvenido de vuelta! Redirigiendo al dashboard...");
+          router.push('/dashboard');
+        } else if (userData?.email_verified) {
+          // Email verificado pero sin negocio, ir al paso 3
+          setCurrentStep('business');
+        } else {
+          // Email no verificado, ir al paso 2
+          setCurrentStep('verification');
+        }
+      } else {
+        // Si no hay email en parámetros, verificar usuario logueado
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          setCurrentStep('basic');
+          setCheckingUserStatus(false);
+          return;
+        }
+
+        // Usuario existe, verificar su estado básico
+        const { data: userData } = await supabase
+          .from('ws_users')
+          .select('store_types, email_verified')
           .eq('email', user.email)
           .single();
 
-        if (verificationData?.verified) {
-          // Email verificado, verificar si ya seleccionó tipo de negocio
-          const { data: userData } = await supabase
-            .from('ws_users')
-            .select('store_types')
-            .eq('user_id', user.id)
-            .single();
-
-          if (userData?.store_types && userData.store_types.length > 0) {
-            // Ya completó todo, redirigir al dashboard
-            router.push('/dashboard');
-          } else {
-            // Necesita seleccionar tipo de negocio
-            setCurrentStep('business');
-            setUserEmail(user.email || '');
-          }
+        if (userData?.store_types && userData.store_types.length > 0) {
+          // Ya completó todo, redirigir al dashboard
+          toast.success("¡Bienvenido de vuelta! Redirigiendo al dashboard...");
+          router.push('/dashboard');
+        } else if (userData?.email_verified) {
+          // Email verificado pero sin negocio, ir al paso 3
+          setCurrentStep('business');
+          setUserEmail(user.email || '');
         } else {
-          // Email no verificado, ir al paso de verificación
+          // Email no verificado, ir al paso 2
           setCurrentStep('verification');
           setUserEmail(user.email || '');
         }
-      } else {
-        // No hay usuario, empezar desde el principio
-        setCurrentStep('basic');
       }
     } catch (error) {
       console.error('Error verificando estado del usuario:', error);
@@ -123,8 +133,115 @@ export default function Register() {
 
   // Verificar estado al cargar la página
   useEffect(() => {
-    checkUserRegistrationStatus();
-  }, []);
+    const initializeRegistration = async () => {
+      try {
+        // Verificar si hay un step específico en la URL primero
+        const stepParam = searchParams?.get('step');
+        if (stepParam && ['verification', 'business', 'platform'].includes(stepParam)) {
+          // Pequeño delay para mostrar el loader
+          await new Promise(resolve => setTimeout(resolve, 1200));
+          setCurrentStep(stepParam as RegistrationStep);
+          setCheckingUserStatus(false);
+          return;
+        }
+
+        // Solo verificar estado del usuario si no hay step específico
+        await checkUserRegistrationStatus();
+      } catch (error) {
+        console.error('Error inicializando registro:', error);
+        setCheckingUserStatus(false);
+        // En caso de error, ir al paso básico
+        setCurrentStep('basic');
+      }
+    };
+    
+    initializeRegistration();
+  }, [searchParams]);
+
+  // Escuchar cuando se verifica el email en otra pestaña
+  useEffect(() => {
+    if (currentStep === 'verification' && userEmail) {
+      const checkVerificationStatus = async () => {
+        try {
+          console.log('Verificando estado del email:', userEmail);
+          
+          // Verificar directamente por email (no por usuario logueado)
+          const { data: userData, error } = await supabase
+            .from('ws_users')
+            .select('store_types, email_verified')
+            .eq('email', userEmail)
+            .single();
+
+          if (error) {
+            console.log('Usuario aún no tiene perfil:', error.message);
+          return;
+        }
+
+          console.log('Estado del usuario:', userData);
+
+          if (userData?.email_verified && userData?.store_types && userData.store_types.length > 0) {
+            // Email verificado y negocio seleccionado, ir al dashboard
+            console.log('Usuario completo, redirigiendo al dashboard');
+            toast.success("¡Email verificado y configuración completada!");
+            router.push('/dashboard');
+          } else if (userData?.email_verified) {
+            // Email verificado pero sin negocio, ir al paso 3
+            console.log('Email verificado, pasando al paso 3');
+            toast.success("¡Email verificado! Completa tu configuración...");
+            setCurrentStep('business');
+          }
+        } catch (error) {
+          console.log('Error verificando estado:', error);
+        }
+      };
+
+      // Verificar inmediatamente y luego cada 2 segundos
+      checkVerificationStatus();
+      const interval = setInterval(checkVerificationStatus, 2000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [currentStep, router, userEmail]);
+
+  // Escuchar cuando se selecciona negocio en otra pestaña
+  useEffect(() => {
+    if (currentStep === 'business' && userEmail) {
+      const checkBusinessStatus = async () => {
+        try {
+          console.log('Verificando estado del negocio para:', userEmail);
+          
+          // Verificar si ya se seleccionó negocio
+          const { data: userData, error } = await supabase
+            .from('ws_users')
+            .select('store_types, email_verified')
+            .eq('email', userEmail)
+            .single();
+
+          if (error) {
+            console.log('Error verificando negocio:', error.message);
+          return;
+        }
+
+          console.log('Estado del negocio:', userData);
+
+          if (userData?.email_verified && userData?.store_types && userData.store_types.length > 0) {
+            // Negocio ya seleccionado, ir al dashboard
+            console.log('Negocio ya seleccionado, redirigiendo al dashboard');
+            toast.success("¡Negocio ya seleccionado! Redirigiendo al dashboard...");
+            router.push('/dashboard');
+          }
+        } catch (error) {
+          console.log('Error verificando negocio:', error);
+        }
+      };
+
+      // Verificar inmediatamente y luego cada 3 segundos
+      checkBusinessStatus();
+      const interval = setInterval(checkBusinessStatus, 3000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [currentStep, router, userEmail]);
 
   const countries = [
     { code: "+56", name: "Chile", flag: "🇨🇱", currency: "CLP" },
@@ -251,8 +368,8 @@ export default function Register() {
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const name = e.target.value;
-    setFormData({
-      ...formData,
+      setFormData({
+        ...formData,
       name: name
     });
     setNameValid(isValidName(name));
@@ -260,8 +377,8 @@ export default function Register() {
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const phone = e.target.value;
-    setFormData({
-      ...formData,
+      setFormData({
+        ...formData,
       phone: phone
     });
     setPhoneValid(isValidPhone(phone, formData.countryCode));
@@ -269,8 +386,8 @@ export default function Register() {
 
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const password = e.target.value;
-    setFormData({
-      ...formData,
+      setFormData({
+        ...formData,
       password: password
     });
     // Verificar si las contraseñas coinciden
@@ -344,7 +461,7 @@ export default function Register() {
       if (existingUser) {
         setEmailStatus('taken');
       } else if (error && error.code === 'PGRST116') {
-        setEmailStatus('available');
+    setEmailStatus('available');
       } else {
         setEmailStatus(null);
       }
@@ -490,8 +607,38 @@ export default function Register() {
     }
   };
 
-  const handleVerificationComplete = () => {
-    setCurrentStep('business');
+  const handleVerificationComplete = async () => {
+    try {
+      if (!userEmail) {
+        setCurrentStep('business');
+      return;
+    }
+
+      // Verificar si ya tiene tipo de negocio seleccionado
+      const { data: userData, error: userError } = await supabase
+        .from('ws_users')
+        .select('store_types')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError) {
+        console.log('Error obteniendo datos del usuario:', userError);
+        setCurrentStep('business');
+        return;
+      }
+
+      if (userData?.store_types && userData.store_types.length > 0) {
+        // Ya tiene tipo de negocio, ir al dashboard
+        toast.success("¡Bienvenido! Redirigiendo al dashboard...");
+        router.push('/dashboard');
+    } else {
+        // No tiene tipo de negocio, ir al paso 3
+        setCurrentStep('business');
+      }
+    } catch (error) {
+      console.error('Error en handleVerificationComplete:', error);
+      setCurrentStep('business');
+    }
   };
 
   const handleBusinessToggle = (businessId: string) => {
@@ -511,22 +658,43 @@ export default function Register() {
     setLoading(true);
 
     try {
-      // Obtener el usuario actual
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        toast.error("No se encontró el usuario");
+      // Verificar estado actual del usuario antes de actualizar
+      const { data: currentUserData, error: checkError } = await supabase
+        .from('ws_users')
+        .select('store_types, email_verified')
+        .eq('email', userEmail)
+        .single();
+
+      if (checkError) {
+        console.error("Error verificando usuario:", checkError);
+        toast.error("Error verificando estado del usuario");
         return;
       }
 
-      // Actualizar perfil existente en ws_users (vista de public) con los tipos de negocio
+      // Verificar si ya tiene negocio seleccionado (prevenir duplicación)
+      if (currentUserData?.store_types && currentUserData.store_types.length > 0) {
+        toast.success("¡Ya tienes negocio seleccionado! Redirigiendo al dashboard...");
+        setTimeout(() => {
+          router.push('/dashboard');
+        }, 1500);
+        return;
+      }
+
+      // Verificar que el email esté verificado
+      if (!currentUserData?.email_verified) {
+        toast.error("Debes verificar tu email antes de continuar");
+    setCurrentStep('verification');
+        return;
+      }
+
+      // Actualizar perfil existente en ws_users con los tipos de negocio
       const { error: updateError } = await supabase
         .from('ws_users')
         .update({
           store_types: selectedStores,
           updated_at: new Date().toISOString()
         })
-        .eq('user_id', user.id);
+        .eq('email', userEmail);
 
       if (updateError) {
         console.error("Error actualizando perfil en ws_users:", updateError);
@@ -584,26 +752,35 @@ export default function Register() {
     setVerificationLoading(true);
     
     try {
-      // Verificar si el usuario ya está verificado en ws_email_verifications (vista de public)
-      const { data: verificationData, error: verificationError } = await supabase
-        .from('ws_email_verifications')
-        .select('*')
+      console.log('Verificando manualmente el estado del email:', userEmail);
+      
+      if (!userEmail) {
+        toast.error("No se encontró el email");
+        return;
+      }
+
+      // Verificar directamente por email (no por usuario logueado)
+      const { data: userData, error: userError } = await supabase
+        .from('ws_users')
+        .select('store_types, email_verified')
         .eq('email', userEmail)
-        .eq('verified', true)
         .single();
 
-      if (verificationError) {
-        console.error('Error verificando estado:', verificationError);
-        toast.error("El email aún no ha sido verificado. Revisa tu bandeja de entrada.");
+      if (userError) {
+        console.error('Error verificando usuario:', userError);
+        toast.error("Error verificando el estado del usuario");
           return;
         }
 
-      if (verificationData && verificationData.verified) {
-        toast.success("¡Email verificado! Continuando con la configuración...");
-        handleVerificationComplete();
-      } else {
+      if (!userData?.email_verified) {
         toast.error("El email aún no ha sido verificado. Revisa tu bandeja de entrada.");
+        return;
       }
+
+      console.log('Email verificado, estado del usuario:', userData);
+      toast.success("¡Email verificado! Continuando con la configuración...");
+      handleVerificationComplete();
+      
     } catch (error: any) {
       console.error('Error verificando estado:', error);
       toast.error("Error al verificar el estado: " + error.message);
@@ -665,15 +842,15 @@ export default function Register() {
 
   // Mostrar loading mientras verifica el estado del usuario
   if (checkingUserStatus) {
-    return (
+  return (
       <PageLayout>
-        <Section className="py-12">
-          <div className="container mx-auto px-4">
-            <div className="max-w-md mx-auto">
-              <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-600 font-body">Verificando tu estado de registro...</p>
-              </div>
+        <Section className="flex items-center justify-center min-h-[calc(100vh-8rem)]">
+          <div className="text-center space-y-6">
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-blue15 border-t-blue8 rounded-full animate-spin mx-auto"></div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-lg text-blue1 font-body">Cargando...</p>
             </div>
           </div>
         </Section>
@@ -801,30 +978,30 @@ export default function Register() {
                               emailStatus === 'taken' ? 'border-red-500' : 
                               emailStatus === 'checking' ? 'border-yellow-500' : 
                               'border-gray-300'
-                            }`}
+                          }`}
                           placeholder="correo@ejemplo.com"
                         />
-                        {emailStatus === 'checking' && (
+                          {emailStatus === 'checking' && (
                           <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                           </div>
-                        )}
-                        {emailStatus === 'available' && (
+                          )}
+                          {emailStatus === 'available' && (
                           <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                             <div className="w-6 h-6 rounded-full border border-green-500 flex items-center justify-center">
                               <Check className="h-4 w-4 text-green-500" />
                             </div>
                           </div>
-                        )}
-                        {emailStatus === 'taken' && (
+                          )}
+                          {emailStatus === 'taken' && (
                           <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                             <div className="w-6 h-6 rounded-full border border-red-500 flex items-center justify-center">
-                              <X className="h-4 w-4 text-red-500" />
-                            </div>
-                          </div>
-                        )}
+                            <X className="h-4 w-4 text-red-500" />
                         </div>
-                        {emailStatus === 'available' && (
+                      </div>
+                      )}
+                        </div>
+                      {emailStatus === 'available' && (
                           <p className="mt-1 text-sm text-green-600 font-body">✓ Email disponible</p>
                         )}
                         {emailStatus === 'taken' && (
@@ -832,10 +1009,10 @@ export default function Register() {
                         )}
                         {emailStatus === 'checking' && (
                           <p className="mt-1 text-sm text-yellow-600 font-body">Verificando disponibilidad...</p>
-                        )}
-                      </div>
+                      )}
+                    </div>
 
-                      <div>
+                    <div>
                         <label htmlFor="phone" className="block text-base font-medium text-gray-900 font-body">
                           Teléfono
                         </label>
@@ -980,7 +1157,7 @@ export default function Register() {
                     <button
                       type="submit"
                         disabled={loading}
-                        className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue8 disabled:opacity-50 disabled:cursor-not-allowed font-body transition-colors"
+                        className="w-full flex justify-center py-3 px-4 border border-transparent text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue8 disabled:opacity-50 disabled:cursor-not-allowed font-body transition-colors"
                       >
                         {loading ? "Creando cuenta..." : "Crear Cuenta"}
                     </button>
@@ -1082,6 +1259,16 @@ export default function Register() {
                 <p className="text-xl text-gray-600 font-body">
                   Elige el tipo de negocio que vas a gestionar
                 </p>
+                
+                {/* Indicador de sincronización */}
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    <p className="text-sm text-blue-700 font-medium">
+                      Sincronizando en tiempo real con otros dispositivos...
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1151,6 +1338,16 @@ export default function Register() {
                 <p className="text-xl font-semibold text-gray-900 mt-2 font-body">
                   {userEmail}
                   </p>
+                  
+                  {/* Indicador de sincronización */}
+                  <div className="mt-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center justify-center space-x-2">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                      <p className="text-sm text-blue-700 font-medium">
+                        Monitoreando verificación en tiempo real...
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
               <Card className="border-gray-200">
@@ -1174,12 +1371,12 @@ export default function Register() {
                       </ol>
                     </div>
 
-                    <div className="bg-yellow-50 rounded-lg p-6">
+                    <div className="bg-gray9 border border-gray8 rounded-lg p-6">
                       <div className="flex items-start">
-                        <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5 flex-shrink-0" />
+                        <AlertTriangle className="h-5 w-5 text-gray5 mr-2 mt-0.5 flex-shrink-0" />
                         <div>
-                          <h4 className="font-semibold text-yellow-800 mb-1">Importante</h4>
-                          <p className="text-sm text-yellow-700">
+                          <h4 className="font-semibold text-gray5 mb-1">Importante</h4>
+                          <p className="text-sm text-gray5">
                             No podrás acceder a la plataforma hasta verificar tu correo electrónico. 
                             Esta es una medida de seguridad para proteger tu cuenta.
                           </p>
@@ -1191,7 +1388,7 @@ export default function Register() {
                       <button
                         onClick={handleCheckVerification}
                         disabled={verificationLoading}
-                        className="flex-1 inline-flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-body font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 inline-flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-body font-normal disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {verificationLoading ? (
                           <>
@@ -1209,7 +1406,7 @@ export default function Register() {
                       <button
                         onClick={handleEmailVerification}
                         disabled={verificationLoading}
-                        className="flex-1 inline-flex items-center justify-center px-6 py-3 border border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-colors font-body font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 inline-flex items-center justify-center px-6 py-3 border border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-colors font-body font-normal disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {verificationLoading ? (
                           <>

@@ -1,160 +1,259 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import toast from 'react-hot-toast';
-import PageLayout from '@/components/layout/PageLayout';
-import Section from '@/components/ui/Section';
+import { supabaseAdmin } from '@/services/supabase/admin';
+import { CheckCircle, XCircle, Clock, AlertTriangle } from 'lucide-react';
+import Header from '@/components/layout/Header';
+import Footer from '@/components/layout/Footer';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+interface VerifyEmailPageProps {
+  searchParams: Promise<{
+    token?: string;
+    email?: string;
+  }>;
+}
 
-export default function VerifyEmail() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [verificationStatus, setVerificationStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('');
+interface VerificationResult {
+  status: 'success' | 'error' | 'expired' | 'already_verified';
+  message: string;
+  email?: string;
+  hasBusiness?: boolean;
+}
 
-  useEffect(() => {
-    const verifyEmail = async () => {
-      try {
-        const token = searchParams.get('token');
-        const email = searchParams.get('email');
+async function verifyEmailToken(token: string, email: string): Promise<VerificationResult> {
+  try {
+    // Verificar que el token existe en ws_email_verifications
+    const { data: verificationData, error: verificationError } = await supabaseAdmin
+      .from('ws_email_verifications')
+      .select('*')
+      .eq('verification_token', token)
+      .eq('email', email)
+      .single();
 
-        if (!token || !email) {
-          setVerificationStatus('error');
-          setMessage('Token o email no válidos');
-          return;
-        }
+    if (verificationError || !verificationData) {
+      return {
+        status: 'error',
+        message: 'Token inválido o no encontrado'
+      };
+    }
 
-      // Verificar el token en ws_email_verifications (vista de public)
-      const { data: verificationData, error: verificationError } = await supabase
-        .from('ws_email_verifications')
-        .select('*')
-        .eq('verification_token', token)
+    // Verificar si ya está verificado
+    if (verificationData.verified) {
+      // Verificar si ya tiene negocio seleccionado
+      const { data: userData } = await supabaseAdmin
+        .from('ws_users')
+        .select('store_types, email_verified')
         .eq('email', email)
-        .eq('verified', false)
         .single();
 
-        if (verificationError || !verificationData) {
-          console.error('Error verificando token:', verificationError);
-          setVerificationStatus('error');
-          setMessage('Token inválido o expirado. Por favor, solicita un nuevo enlace de verificación.');
-          return;
-        }
+      return {
+        status: 'already_verified',
+        message: 'Tu email ya estaba verificado',
+        email,
+        hasBusiness: userData?.store_types && userData.store_types.length > 0
+      };
+    }
 
-      // Marcar como verificado en ws_email_verifications (vista de public)
-      const { error: updateError } = await supabase
-        .from('ws_email_verifications')
-        .update({ 
-          verified: true,
-          verified_at: new Date().toISOString()
-        })
-        .eq('id', verificationData.id);
+    // Verificar si el token ha expirado (24 horas)
+    const tokenAge = Date.now() - new Date(verificationData.created_at).getTime();
+    const maxAge = 24 * 60 * 60 * 1000; // 24 horas en milisegundos
 
-        if (updateError) {
-          console.error('Error actualizando verificación:', updateError);
-          setVerificationStatus('error');
-          setMessage('Error al verificar el email. Por favor, intenta nuevamente.');
-          return;
-        }
+    if (tokenAge > maxAge) {
+      return {
+        status: 'expired',
+        message: 'El enlace de verificación ha expirado. Solicita uno nuevo.'
+      };
+    }
 
-      // Actualizar ws_users (vista de public) para marcar email como verificado
-      const { error: userUpdateError } = await supabase
-        .from('ws_users')
-        .update({ email_verified: true })
-        .eq('user_id', verificationData.user_id);
+    // Actualizar email_verified en ws_users
+    const { error: updateError } = await supabaseAdmin
+      .from('ws_users')
+      .update({ email_verified: true })
+      .eq('email', email);
 
-        if (userUpdateError) {
-          console.error('Error actualizando usuario:', userUpdateError);
-          // No fallar aquí, la verificación principal ya está completa
-        }
+    if (updateError) {
+      return {
+        status: 'error',
+        message: 'Error al verificar el email. Intenta nuevamente.'
+      };
+    }
 
-        setVerificationStatus('success');
-        setMessage('¡Email verificado exitosamente!');
-        toast.success('¡Email verificado exitosamente!');
-        
-        // Redirigir al login después de verificar el email
-        setTimeout(() => {
-          router.push('/login');
-        }, 10000);
-      } catch (error) {
-        console.error('Error en verificación:', error);
-        setVerificationStatus('error');
-        setMessage('Error interno. Por favor, intenta nuevamente.');
-      }
+    // Marcar verificación como completada
+    await supabaseAdmin
+      .from('ws_email_verifications')
+      .update({ verified: true, verified_at: new Date().toISOString() })
+      .eq('verification_token', token);
+
+    // Verificar si ya tiene negocio seleccionado
+    const { data: userData } = await supabaseAdmin
+      .from('ws_users')
+      .select('store_types')
+      .eq('email', email)
+      .single();
+
+    return {
+      status: 'success',
+      message: '¡Email verificado exitosamente!',
+      email,
+      hasBusiness: userData?.store_types && userData.store_types.length > 0
     };
 
-    verifyEmail();
-  }, [searchParams, router]);
+    } catch (error) {
+    console.error('Error verificando email:', error);
+    return {
+      status: 'error',
+      message: 'Error interno del servidor'
+    };
+  }
+}
+
+export default async function VerifyEmail({ searchParams }: VerifyEmailPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const { token, email } = resolvedSearchParams;
+  
+  let result: VerificationResult = {
+    status: 'error',
+    message: 'Parámetros inválidos'
+  };
+
+  try {
+    if (token && email) {
+      result = await verifyEmailToken(token, email);
+    }
+  } catch (error) {
+    console.error('Error en VerifyEmail:', error);
+    result = {
+      status: 'error',
+      message: 'Error interno del servidor'
+    };
+  }
+
+  const getStatusIcon = () => {
+    switch (result.status) {
+      case 'success':
+        return <CheckCircle className="h-16 w-16 text-green-500" />;
+      case 'error':
+        return <XCircle className="h-16 w-16 text-red-500" />;
+      case 'expired':
+        return <Clock className="h-16 w-16 text-yellow-500" />;
+      case 'already_verified':
+        return <AlertTriangle className="h-16 w-16 text-blue-500" />;
+      default:
+        return <XCircle className="h-16 w-16 text-red-500" />;
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (result.status) {
+      case 'success':
+        return 'text-green-600';
+      case 'error':
+        return 'text-red-600';
+      case 'expired':
+        return 'text-yellow-600';
+      case 'already_verified':
+        return 'text-blue-600';
+      default:
+        return 'text-red-600';
+    }
+  };
+
+  const getNextAction = () => {
+    if (result.status === 'success' || result.status === 'already_verified') {
+      if (result.hasBusiness) {
+        return {
+          text: 'Iniciar Sesión',
+          href: '/login',
+          description: 'Tu cuenta está completamente configurada. Inicia sesión para acceder al dashboard.'
+        };
+      } else {
+        return {
+          text: 'Continuar Configuración',
+          href: `/register?email=${encodeURIComponent(result.email || '')}`,
+          description: 'Email verificado. Continúa con la configuración del negocio.'
+        };
+      }
+    } else if (result.status === 'expired') {
+      return {
+        text: 'Solicitar Nuevo Enlace',
+        href: '/login',
+        description: 'Inicia sesión para reenviar el enlace de verificación'
+      };
+    } else {
+      return {
+        text: 'Volver al Login',
+        href: '/login',
+        description: 'Intenta nuevamente o contacta soporte'
+      };
+    }
+  };
+
+  const nextAction = getNextAction();
 
   return (
-    <PageLayout>
-      <Section className="bg-white pt-16">
-        <div className="max-w-md mx-auto text-center py-16">
-          {verificationStatus === 'loading' && (
-            <>
-              <div className="mb-6">
-                <Loader2 className="h-16 w-16 text-blue-600 animate-spin mx-auto" />
-              </div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-4">
-                Verificando tu email...
+    <>
+      <Header />
+      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 pt-20">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+            <div className="text-center">
+              {getStatusIcon()}
+              
+              <h1 className={`mt-4 text-2xl font-bold ${getStatusColor()}`}>
+                {result.status === 'success' && '¡Verificación Exitosa!'}
+                {result.status === 'error' && 'Error de Verificación'}
+                {result.status === 'expired' && 'Enlace Expirado'}
+                {result.status === 'already_verified' && 'Ya Verificado'}
               </h1>
-              <p className="text-gray-600">
-                Por favor espera mientras verificamos tu cuenta.
-              </p>
-            </>
-          )}
 
-          {verificationStatus === 'success' && (
-            <>
-              <div className="mb-6">
-                <CheckCircle className="h-16 w-16 text-green-600 mx-auto" />
+              <p className="mt-2 text-gray-600">
+                {result.message}
+              </p>
+              
+              {result.email && (
+                <p className="mt-1 text-sm text-gray-500">
+                  Email: {result.email}
+                </p>
+              )}
+              
+              <div className="mt-6">
+                <a
+                  href={nextAction.href}
+                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue4 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                >
+                  {nextAction.text}
+                </a>
+                
+                <p className="mt-2 text-xs text-gray-500">
+                  {nextAction.description}
+                </p>
               </div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-4">
-                ¡Email Verificado!
-              </h1>
-              <p className="text-gray-600 mb-6">
-                {message}
-              </p>
-              <p className="text-sm text-gray-500">
-                Redirigiendo al registro...
-              </p>
-            </>
-          )}
 
-          {verificationStatus === 'error' && (
-            <>
-              <div className="mb-6">
-                <XCircle className="h-16 w-16 text-red-600 mx-auto" />
+              {result.status === 'expired' && (
+                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <p className="text-sm text-yellow-700">
+                    <strong>Nota:</strong> Los enlaces de verificación expiran después de 24 horas por seguridad.
+                  </p>
+                </div>
+              )}
+
+              {result.status === 'success' && !result.hasBusiness && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-sm text-blue-700">
+                    <strong>Siguiente paso:</strong> Inicia sesión en cualquier dispositivo para continuar con la configuración del negocio.
+                  </p>
+                </div>
+              )}
+
+              {result.status === 'success' && result.hasBusiness && (
+                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
+                  <p className="text-sm text-green-700">
+                    <strong>¡Listo!</strong> Tu cuenta está completamente configurada. Inicia sesión en cualquier dispositivo para acceder al dashboard.
+                </p>
               </div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-4">
-                Error de Verificación
-              </h1>
-              <p className="text-gray-600 mb-6">
-                {message}
-              </p>
-              <div className="space-y-4">
-                <button
-                  onClick={() => router.push('/register')}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
-                >
-                  Volver al Registro
-                </button>
-                <button
-                  onClick={() => router.push('/login')}
-                  className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-3 px-4 rounded-lg transition-colors"
-                >
-                  Ir al Login
-                </button>
-              </div>
-            </>
-          )}
+              )}
+            </div>
+          </div>
         </div>
-      </Section>
-    </PageLayout>
+      </div>
+      <Footer />
+    </>
   );
 }

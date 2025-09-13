@@ -23,14 +23,14 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
               <Link
                 href="/register"
-                className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200"
+                className="inline-flex items-center justify-center px-8 py-4 text-lg font-normal rounded-lg text-white bg-blue-600 hover:bg-blue4 hover:text-white transition-colors duration-200"
               >
                 <Briefcase className="mr-3 h-5 w-5" />
                 Crear Cuenta Gratuita
               </Link>
               <Link
                 href="/plans"
-                className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-lg text-blue-600 bg-white hover:bg-gray-50 transition-colors duration-200 border-2 border-blue-600"
+                className="inline-flex items-center justify-center px-8 py-4 text-lg font-normal rounded-lg text-blue-600 bg-white hover:bg-gray-50 transition-colors duration-200 border-2 border-blue-600"
               >
                 <Target className="mr-3 h-5 w-5" />
                 Ver Soluciones
@@ -118,14 +118,14 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link
                 href="/register"
-                className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200"
+                className="inline-flex items-center justify-center px-8 py-4 text-lg font-normal rounded-lg text-white bg-blue-600 hover:bg-blue4 hover:text-white transition-colors duration-200"
               >
                 <User className="mr-3 h-5 w-5" />
                 Crear Cuenta Gratuita
               </Link>
               <Link
                 href="/login"
-                className="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-lg text-blue-600 bg-white hover:bg-gray-50 transition-colors duration-200 border-2 border-blue-600"
+                className="inline-flex items-center justify-center px-8 py-4 text-lg font-normal rounded-lg text-blue-600 bg-white hover:bg-gray-50 transition-colors duration-200 border-2 border-blue-600"
               >
                 <LogIn className="mr-3 h-5 w-5" />
                 Iniciar Sesión

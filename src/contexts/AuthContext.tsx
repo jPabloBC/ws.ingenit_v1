@@ -182,23 +182,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       error: error?.message
     });
     
-    // Si el login fue exitoso, verificar en ws_email_verifications
+    // Si el login fue exitoso, verificar estado completo del usuario
     if (data.user) {
       try {
-        const { data: verification, error: verificationError } = await supabaseAdmin
+        // Primero verificar si el email está verificado
+        const { data: verification, error: verificationError } = await supabase
           .from('ws_email_verifications')
           .select('verified')
           .eq('user_id', data.user.id)
+          .eq('verified', true)
           .single();
 
         // Si no está verificado, redirigir al registro para verificar
-        if (verificationError || !verification || !verification.verified) {
+        if (verificationError && verificationError.code === 'PGRST116') {
           console.log('📧 Usuario no verificado, redirigiendo a verificación:', data.user.email);
-          // No cerrar sesión, mantener al usuario logueado para el flujo de verificación
-          // Redirigir inmediatamente al paso de verificación
-          if (typeof window !== 'undefined') {
-            window.location.href = '/register?step=verification';
-          }
           return { 
             error: { 
               message: 'EMAIL_NOT_VERIFIED',
@@ -206,12 +203,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } 
           };
         }
-      } catch (error) {
-        console.log('📧 Error verificando email, redirigiendo a verificación:', error);
-        // Redirigir inmediatamente al paso de verificación
-        if (typeof window !== 'undefined') {
-          window.location.href = '/register?step=verification';
+
+        // Si hay otro error de verificación, también redirigir
+        if (verificationError) {
+          console.log('📧 Error verificando email, redirigiendo a verificación:', verificationError);
+          return { 
+            error: { 
+              message: 'EMAIL_NOT_VERIFIED',
+              redirectTo: '/register?step=verification'
+            } 
+          };
         }
+
+        // Email verificado, verificar si tiene negocio seleccionado
+        console.log('✅ Email verificado, verificando negocio...');
+        
+        const { data: userData, error: userError } = await supabase
+          .from('ws_users')
+          .select('store_types, email_verified')
+          .eq('user_id', data.user.id)
+          .single();
+
+        if (userError) {
+          console.log('❌ Error obteniendo datos del usuario:', userError);
+          return { 
+            error: { 
+              message: 'EMAIL_NOT_VERIFIED',
+              redirectTo: '/register?step=verification'
+            } 
+          };
+        }
+
+        // Verificar si ya tiene negocio seleccionado
+        if (userData?.store_types && userData.store_types.length > 0) {
+          console.log('✅ Usuario verificado con negocio seleccionado, login exitoso');
+        } else {
+          console.log('📊 Usuario verificado pero sin negocio, redirigiendo a selección');
+          return { 
+            error: { 
+              message: 'EMAIL_VERIFIED_NO_BUSINESS',
+              redirectTo: '/register?step=business'
+            } 
+          };
+        }
+        
+      } catch (error) {
+        console.log('📧 Error verificando estado del usuario:', error);
         return { 
           error: { 
             message: 'EMAIL_NOT_VERIFIED',

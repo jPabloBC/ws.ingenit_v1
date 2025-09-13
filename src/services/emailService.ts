@@ -20,7 +20,7 @@ export interface WelcomeEmailData {
 
 // Generar URL de verificación
 export function generateVerificationUrl(token: string, email: string): string {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
   return `${baseUrl}/verify-email?token=${token}&email=${encodeURIComponent(email)}`;
 }
 
@@ -288,7 +288,8 @@ export async function sendVerificationEmail(email: string, name: string, token: 
 
 // Función específica para enviar correo de bienvenida
 export async function sendWelcomeEmail(email: string, name: string): Promise<{ success: boolean; error?: string }> {
-  const dashboardUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/dashboard`;
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  const dashboardUrl = `${baseUrl}/dashboard`;
   const emailData = createWelcomeEmail({ email, name, dashboardUrl });
   return await sendEmail(emailData);
 }
