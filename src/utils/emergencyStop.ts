@@ -1,5 +1,5 @@
 // MODO DE EMERGENCIA - PREVENCIÓN ABSOLUTA DE BUCLES INFINITOS
-let globalExecutionMap = new Map<string, boolean>();
+const globalExecutionMap = new Map<string, boolean>();
 let globalUserIdCache: string | null = null;
 const DEBUG_EMERGENCY = process.env.NEXT_PUBLIC_DEBUG_EMERGENCY === 'true';
 

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, ExternalLink, Filter, Loader2, Package, Search } from 'lucide-react';
 import { searchProductsFromAllApis, ProductApiResult } from '@/services/api/productApis';
+import { searchPublicProducts, convertToProductApiResult } from '@/services/api/publicProductsApi';
 import Button from '@/components/ui/Button';
 
 interface ProductSearchProps {
@@ -92,13 +93,25 @@ export default function ProductSearch({ onProductSelect, onClose }: ProductSearc
     setSearched(true);
 
     try {
-      const results = await searchProductsFromAllApis({
+      // Buscar en la tabla pública
+      const publicResultsRaw = await searchPublicProducts(term, 20);
+      const publicResults: ProductApiResult[] = publicResultsRaw.map(convertToProductApiResult);
+
+      // Buscar en APIs externas
+      const apiResults = await searchProductsFromAllApis({
         query: term,
         category: selectedCategory || undefined,
         limit: 20,
         barcodeGlobal
       });
-      setProducts(results);
+
+      // Combinar y eliminar duplicados por código de barras
+      const allResults = [...publicResults, ...apiResults];
+      const uniqueResults = allResults.filter((product, index, self) =>
+        product.barcode &&
+        index === self.findIndex(p => p.barcode === product.barcode)
+      );
+      setProducts(uniqueResults);
     } catch (error) {
       console.error('Error buscando productos:', error);
       setProducts([]);

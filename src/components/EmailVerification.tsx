@@ -1,8 +1,8 @@
 'use client';
-// Removido: import no usado
-import { Check, CheckCircle, Mail, RefreshCw } from 'lucide-react';;
-// Removido: import no usado
+import { useState } from 'react';
+import { CheckCircle, Mail, RefreshCw } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import { supabase } from '@/services/supabase/client';
 import toast from 'react-hot-toast';
 
 interface EmailVerificationProps {
@@ -11,7 +11,7 @@ interface EmailVerificationProps {
 }
 
 export default function EmailVerification({ email, onVerified }: EmailVerificationProps) {
-  // Removido: variable no usada
+  const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
   const resendVerificationEmail = async () => {
@@ -30,7 +30,7 @@ export default function EmailVerification({ email, onVerified }: EmailVerificati
 
       setSent(true);
       toast.success('Email de verificación reenviado. Revisa tu correo.');
-    } catch {
+    } catch (error) {
       console.error('Error inesperado:', error);
       toast.error('Error inesperado al reenviar el email');
     } finally {
@@ -55,7 +55,7 @@ export default function EmailVerification({ email, onVerified }: EmailVerificati
       } else {
         toast('El email aún no ha sido verificado. Revisa tu correo.');
       }
-    } catch {
+    } catch (error) {
       console.error('Error inesperado:', error);
       toast.error('Error inesperado al verificar');
     } finally {
@@ -78,7 +78,8 @@ export default function EmailVerification({ email, onVerified }: EmailVerificati
           
           <div className="space-y-3">
             <div className="flex space-x-2">
-              <LucideButton                 onClick={resendVerificationEmail}
+              <Button
+                onClick={resendVerificationEmail}
                 disabled={loading}
                 variant="outline"
                 size="sm"
@@ -90,9 +91,10 @@ export default function EmailVerification({ email, onVerified }: EmailVerificati
                   <Mail className="h-4 w-4" />
                 )}
                 <span>{sent ? 'Reenviado' : 'Reenviar email'}</span>
-              </LucideButton>
+              </Button>
               
-              <LucideButton                 onClick={checkVerificationStatus}
+              <Button
+                onClick={checkVerificationStatus}
                 disabled={loading}
                 variant="outline"
                 size="sm"
@@ -104,7 +106,7 @@ export default function EmailVerification({ email, onVerified }: EmailVerificati
                   <CheckCircle className="h-4 w-4" />
                 )}
                 <span>Verificar estado</span>
-              </LucideButton>
+              </Button>
             </div>
             
             {sent && (

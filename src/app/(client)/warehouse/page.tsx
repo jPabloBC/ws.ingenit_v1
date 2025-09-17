@@ -11,9 +11,8 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import QuickStat from '@/components/ui/QuickStat';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { getProducts } from '@/services/supabase/products';
+import { getProducts, updateProduct } from '@/services/supabase/products';
 import SecurityGuard from '@/components/SecurityGuard';
-// Removido: import no usado
 // Removido: import no usado
 import toast from 'react-hot-toast';
 // Removido: import no usado
@@ -30,6 +29,8 @@ interface Product {
 }
 
 function WarehousePage() {
+  // Estado para edición inline/modal
+  const [editingProduct, setEditingProduct] = useState<null | Product>(null);
   const router = useRouter();
   const { user } = useAuth();
   const { currentBusiness } = useStore();
@@ -126,6 +127,58 @@ function WarehousePage() {
       </SecurityGuard>
     );
   }
+
+  // Modal o sección de edición inline
+  const renderEditModal = () => editingProduct && (
+    <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg">
+        <h2 className="text-xl font-bold mb-4">Editar Producto</h2>
+        <form
+          onSubmit={async e => {
+            e.preventDefault();
+            if (!user) return;
+            const { id, name, stock } = editingProduct;
+            const updates = { name, stock };
+            const result = await updateProduct(id, updates, user.id);
+            if (result.success) {
+              setEditingProduct(null);
+              toast.success('Producto actualizado');
+              await loadProducts();
+            } else {
+              toast.error(result.error || 'Error al actualizar');
+            }
+          }}
+        >
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Nombre</label>
+            <input
+              className="w-full border px-3 py-2 rounded"
+              value={editingProduct.name}
+              onChange={e => setEditingProduct({ ...editingProduct, name: e.target.value })}
+            />
+          </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Stock</label>
+            <input
+              type="number"
+              className="w-full border px-3 py-2 rounded"
+              value={editingProduct.stock}
+              onChange={e => setEditingProduct({ ...editingProduct, stock: Number(e.target.value) })}
+            />
+          </div>
+          {/* Agrega más campos según necesidad */}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setEditingProduct(null)}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
+              Guardar Cambios
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 
   return (
     <SecurityGuard>
@@ -300,18 +353,64 @@ function WarehousePage() {
                           </td>
                           <td className="py-3 px-4 text-right">
                             <div className="flex justify-end space-x-2">
-                              <Button onClick={() => router.push(`/inventory/edit/${product.id}`)}
+                              <Button onClick={() => setEditingProduct(product)}
                                 size="sm"
                                 variant="outline"
                               >
                                 Editar
                               </Button>
-                              <Button onClick={() => router.push(`/warehouse/transfer/${product.id}`)}
-                                size="sm"
-                                className="bg-blue-600 hover:bg-blue-700"
-                              >
-                                Transferir
-                              </Button>
+
+      {/* Modal de edición de producto */}
+      {editingProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg">
+            <h2 className="text-xl font-bold mb-4">Editar Producto</h2>
+            <form
+              onSubmit={async e => {
+                e.preventDefault();
+                if (!user) return;
+                const { id, name, stock } = editingProduct;
+                const updates = { name, stock };
+                const result = await updateProduct(id, updates, user.id);
+                if (result.success) {
+                  setEditingProduct(null);
+                  toast.success('Producto actualizado');
+                  await loadProducts();
+                } else {
+                  toast.error(result.error || 'Error al actualizar');
+                }
+              }}
+            >
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Nombre</label>
+                <input
+                  className="w-full border px-3 py-2 rounded"
+                  value={editingProduct.name}
+                  onChange={e => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Stock</label>
+                <input
+                  type="number"
+                  className="w-full border px-3 py-2 rounded"
+                  value={editingProduct.stock}
+                  onChange={e => setEditingProduct({ ...editingProduct, stock: Number(e.target.value) })}
+                />
+              </div>
+              {/* Agrega más campos según necesidad */}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setEditingProduct(null)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
+                  Guardar Cambios
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
                             </div>
                           </td>
                         </tr>
@@ -324,10 +423,11 @@ function WarehousePage() {
           </CardContent>
         </Card>
       </div>
+      {renderEditModal()}
     </SecurityGuard>
   );
 }
 
 export default dynamic(() => Promise.resolve(WarehousePage), {
   ssr: false
-}); 
+});

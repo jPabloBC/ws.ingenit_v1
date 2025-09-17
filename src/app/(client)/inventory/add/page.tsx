@@ -9,6 +9,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { createProduct } from '@/services/supabase/products';
 import { getCategories, createCategory } from '@/services/supabase/categories';
+import { addPublicProduct } from '@/services/api/publicProductsApi';
+import { getCategoryNameById } from '@/services/supabase/getCategoryNameById';
 import toast from 'react-hot-toast';
 import ProductSearch from '@/components/products/ProductSearch';
 
@@ -16,6 +18,7 @@ import BarcodeScanner from '@/components/products/BarcodeScanner';
 
 import { ProductApiResult } from '@/services/api/productApis';
 import CurrencyInput from '@/components/ui/CurrencyInput';
+import ImageUpload from '@/components/ui/ImageUpload';
 
 interface Category {
   id: string;
@@ -53,7 +56,9 @@ export default function AddProductPage() {
     origin_ingredients: '',
     manufacturing_places: '',
     traceability_code: '',
-    official_url: ''
+    official_url: '',
+    source: '', // Para evitar duplicados en tabla pública
+    imageFile: undefined as File | null | undefined // Solo uso local, nunca se envía a la DB
   });
   const [loading, setLoading] = useState(false);
   const [showProductSearch, setShowProductSearch] = useState(false);
@@ -149,19 +154,37 @@ export default function AddProductPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!user) {
       toast.error('Debes iniciar sesión para crear productos');
       return;
     }
-
     setLoading(true);
-
     try {
+      let imageUrl = formData.image_url;
+      // Subir imagen a Storage si hay archivo seleccionado
+      if (formData.imageFile) {
+        const file = formData.imageFile;
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const filePath = `hotel/${user.id}/productos/images/${fileName}`;
+        const { data, error } = await (await import('@/services/supabase/client')).supabase.storage
+          .from('hotel')
+          .upload(filePath, file, { cacheControl: '3600', upsert: false });
+        if (error) {
+          toast.error('Error al subir la imagen');
+          setLoading(false);
+          return;
+        }
+        // Obtener URL pública
+        const { data: urlData } = (await import('@/services/supabase/client')).supabase.storage
+          .from('hotel')
+          .getPublicUrl(filePath);
+        imageUrl = urlData.publicUrl;
+      }
+
       const productData = {
         ...formData,
         barcode: formData.barcode || undefined,
-        // No incluir sku - se generará automáticamente en la base de datos
         price: parseFloat(formData.price) || 0,
         cost: parseFloat(formData.cost) || 0,
         stock: parseInt(formData.stock) || 0,
@@ -170,11 +193,13 @@ export default function AddProductPage() {
         supplier_id: formData.supplier_id || undefined,
         labels: formData.labels ? formData.labels.split(',').map(s => s.trim()).filter(Boolean) : undefined,
         categories_list: formData.categories_list ? formData.categories_list.split(',').map(s => s.trim()).filter(Boolean) : undefined,
-        countries_sold: formData.countries_sold ? formData.countries_sold.split(',').map(s => s.trim()).filter(Boolean) : undefined
+        countries_sold: formData.countries_sold ? formData.countries_sold.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+        image_url: imageUrl
       };
-      
-      // Remover el campo sku del objeto para que se genere automáticamente
+      // Remover campos que no deben ir a la tabla ws_products
       delete (productData as any).sku;
+      delete (productData as any).source;
+      delete (productData as any).imageFile;
 
       // Determinar businessId real desde currentBusiness (multi-negocio)
       const businessId = currentBusiness?.id;
@@ -184,19 +209,56 @@ export default function AddProductPage() {
         return;
       }
 
-  // No establecer app_id predeterminado; dejar que la lógica backend lo maneje si es necesario
-
       const result = await createProduct(productData as any, { businessId });
 
       if (!result.success) {
         console.error('Error creating product:', result.error);
         toast.error(result.error || 'Error al crear el producto');
-        
-        // Si es un error de límites, redirigir a suscripción
         if (result.error?.includes('límite') || result.error?.includes('plan')) {
           router.push('/subscription');
         }
         return;
+      }
+
+      // Si el producto fue creado exitosamente, también agregarlo a la tabla pública
+      try {
+        // Evitar bucle: solo guardar si el producto NO viene de la fuente pública
+        if (formData.barcode && formData.name && formData.source !== 'public') {
+          // Verificar si ya existe un producto con el mismo código de barras en la tabla pública
+          const { data: existing, error: existingError } = await (await import('@/services/supabase/client')).supabase
+            .from('public_products')
+            .select('id')
+            .eq('barcode', formData.barcode)
+            .maybeSingle();
+
+          if (!existing) {
+            // Obtener el nombre real de la categoría desde la base de datos
+            const categoryName = await getCategoryNameById(formData.category_id);
+            if (!categoryName) {
+              console.warn('No se encontró la categoría en la base de datos para el id:', formData.category_id);
+            }
+            const publicProductData = {
+              barcode: formData.barcode,
+              name: formData.name,
+              description: formData.description || undefined,
+              brand: formData.brand || undefined,
+              category: categoryName,
+              price: parseFloat(formData.price) || undefined,
+              image_url: formData.image_url || undefined,
+              quantity: formData.quantity || undefined,
+              packaging: formData.packaging || undefined,
+              country: 'Chile',
+              source: 'user_contributed'
+            };
+            await addPublicProduct(publicProductData);
+            console.log('Producto agregado a la tabla pública exitosamente');
+          } else {
+            console.log('Producto ya existe en la tabla pública, no se duplica.');
+          }
+        }
+      } catch (publicError) {
+        // No mostrar error al usuario ya que el producto principal fue creado exitosamente
+        console.error('Error agregando producto a tabla pública:', publicError);
       }
 
       // Mostrar mensaje de éxito con el SKU generado
@@ -256,7 +318,7 @@ export default function AddProductPage() {
       description: product.description || '',
       barcode: product.barcode || '',
       cost: estimatedCost.toString(),
-      price: estimatedCost.toString(), // Start with cost, no percentage
+      price: estimatedCost.toString(), // Start with cost, no porcentaje
       image_url: product.image || ''
     });
     toast.success(`Código ${product.barcode} capturado (${product.name})`);
@@ -751,19 +813,29 @@ export default function AddProductPage() {
                   )}
                 </div>
 
-                {/* URL de Imagen */}
+                {/* URL de Imagen y subida */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    URL de Imagen
+                    Imagen del producto
                   </label>
-                  <input
-                    type="url"
-                    name="image_url"
-                    value={formData.image_url}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="https://ejemplo.com/imagen.jpg"
-                  />
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="url"
+                      name="image_url"
+                      value={formData.image_url}
+                      onChange={handleInputChange}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="https://ejemplo.com/imagen.jpg"
+                    />
+                    {/* Subida de imagen a Storage */}
+                    {user?.id && (
+                      <ImageUpload
+                        currentImage={formData.image_url}
+                        onFileSelect={(file: File | null) => setFormData(prev => ({ ...prev, imageFile: file }))}
+                        className="!m-0 !w-9 !h-9"
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -961,4 +1033,4 @@ export default function AddProductPage() {
 
       </div>
   );
-} 
+}

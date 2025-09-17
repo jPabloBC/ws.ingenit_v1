@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash2, Clock, DollarSign, User, AlertCircle, CheckCircle } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Clock, DollarSign, User, AlertCircle, CheckCircle, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import SecurityGuard from '@/components/SecurityGuard';
 

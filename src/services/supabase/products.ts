@@ -118,15 +118,16 @@ export const getProducts = async (businessId?: string): Promise<Product[]> => {
       setTimeout(() => reject(new Error('Products timeout')), 5000)
     );
     
-    // Consulta filtrada por business_id para aislamiento multi-negocio
+
+    // Consulta filtrada por business_id para aislamiento multi-negocio, SIN join con ws_categories
     let queryPromise = supabase
       .from('ws_products')
-      .select('*')
-      .eq('user_id', session.user.id); // Solo productos del usuario actual
-    
+      .select('*') // solo los productos, el join se hace en frontend
+      .eq('user_id', session.user.id);
+
     // Filtrar por business_id (ya validado arriba)
     queryPromise = queryPromise.eq('business_id', businessId);
-    
+
     queryPromise = queryPromise.order('created_at', { ascending: false });
 
     console.log('📊 Executing query...');
