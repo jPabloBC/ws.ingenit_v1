@@ -217,28 +217,65 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     (async () => {
       try {
+  // console.log('🔄 StoreContext - Cargando negocios para usuario:', user.id);
         const businesses = await businessesService.getUserBusinesses(user.id);
+  // console.log('📋 StoreContext - Negocios encontrados:', businesses.length, businesses);
         setUserBusinesses(businesses);
         if (businesses.length > 0) {
           const savedBusinessId = localStorage.getItem('selectedBusinessId');
           const selectedBusiness = savedBusinessId
             ? businesses.find(b => b.id === savedBusinessId) || businesses[0]
             : businesses[0];
+          // console.log('🏪 StoreContext - Negocio seleccionado:', selectedBusiness);
           const resolvedKey = storeConfigs[selectedBusiness.store_type] ? selectedBusiness.store_type : 'almacen';
           if (!storeConfigs[selectedBusiness.store_type]) {
-            console.warn('[StoreContext] store_type sin config definida:', selectedBusiness.store_type, ' -> usando almacen');
+            // console.warn('[StoreContext] store_type sin config definida:', selectedBusiness.store_type, ' -> usando almacen');
           }
           setCurrentBusinessState(selectedBusiness);
           setStoreTypeState(resolvedKey);
           setStoreConfig(storeConfigs[resolvedKey]);
           localStorage.setItem('selectedBusinessId', selectedBusiness.id);
           localStorage.setItem('selectedStoreType', resolvedKey);
+          // console.log('✅ StoreContext - Configuración establecida:', { business: selectedBusiness.id, type: resolvedKey });
         } else {
-          const savedStoreType = localStorage.getItem('selectedStoreType') || 'almacen';
-          setStoreTypeState(savedStoreType);
-          setStoreConfig(storeConfigs[savedStoreType]);
+          // console.warn('⚠️ StoreContext - No hay negocios para el usuario, usando defaults');
+          // console.log('🔍 StoreContext - Verificando si necesitamos crear un negocio por defecto...');
+          
+          // Intentar crear un negocio por defecto si el usuario no tiene ninguno
+          try {
+            const defaultBusiness = {
+              name: 'Mi Negocio',
+              store_type: 'almacen',
+              address: '',
+              phone: '',
+              email: user.email || '',
+              is_active: true
+            };
+            // console.log('🏪 StoreContext - Creando negocio por defecto:', defaultBusiness);
+            const result = await businessesService.createBusiness(defaultBusiness, user.id);
+            if (result.success && result.data) {
+              // console.log('✅ StoreContext - Negocio por defecto creado:', result.data);
+              setUserBusinesses([result.data]);
+              setCurrentBusinessState(result.data);
+              setStoreTypeState('almacen');
+              setStoreConfig(storeConfigs['almacen']);
+              localStorage.setItem('selectedBusinessId', result.data.id);
+              localStorage.setItem('selectedStoreType', 'almacen');
+            } else {
+              // console.error('❌ StoreContext - Error creando negocio por defecto:', result.error);
+              const savedStoreType = localStorage.getItem('selectedStoreType') || 'almacen';
+              setStoreTypeState(savedStoreType);
+              setStoreConfig(storeConfigs[savedStoreType]);
+            }
+          } catch (createError) {
+            // console.error('❌ StoreContext - Error creando negocio por defecto:', createError);
+            const savedStoreType = localStorage.getItem('selectedStoreType') || 'almacen';
+            setStoreTypeState(savedStoreType);
+            setStoreConfig(storeConfigs[savedStoreType]);
+          }
         }
       } catch (error) {
+  // console.error('❌ StoreContext - Error cargando negocios:', error);
         const savedStoreType = localStorage.getItem('selectedStoreType') || 'almacen';
         setStoreTypeState(savedStoreType);
         setStoreConfig(storeConfigs[savedStoreType]);

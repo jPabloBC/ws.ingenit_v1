@@ -52,11 +52,92 @@ export const convertToProductApiResult = (product: PublicProduct): any => {
 };
 
 // Buscar productos públicos por texto
-export const searchPublicProducts = async (
-  searchTerm: string, 
-  limit: number = 20
-): Promise<PublicProduct[]> => {
+export const upsertPublicProductSafe = async (
+  productData: {
+    barcode: string;
+    name: string;
+    description?: string;
+    image_url?: string;
+    brand?: string;
+    category?: string;
+    calories?: number;
+    protein?: number;
+    carbs?: number;
+    fat?: number;
+    quantity?: string;
+    packaging?: string;
+    country?: string;
+  },
+  userId?: string
+): Promise<string | null> => {
   try {
+    console.log('🔄 Procesando producto (crear o enriquecer campos vacíos):', productData.barcode);
+    
+    const { data, error } = await supabase.rpc('upsert_public_product_safe', {
+      product_barcode: productData.barcode,
+      product_name: productData.name,
+      product_description: productData.description || null,
+      product_image_url: productData.image_url || null,
+      product_brand: productData.brand || null,
+      product_category: productData.category || null,
+      product_calories: productData.calories || null,
+      product_protein: productData.protein || null,
+      product_carbs: productData.carbs || null,
+      product_fat: productData.fat || null,
+      product_quantity: productData.quantity || null,
+      product_packaging: productData.packaging || null,
+      product_country: productData.country || null,
+      user_id: userId || null
+    });
+    
+    if (error) {
+      console.error('❌ Error procesando producto:', error);
+      return null;
+    }
+
+    console.log('✅ Producto procesado exitosamente con ID:', data);
+    return data;
+  } catch (error) {
+    console.error('❌ Error procesando producto:', error);
+    return null;
+  }
+};
+
+export const createPublicProductIfNotExists = async (
+  productData: {
+    barcode: string;
+    name: string;
+    description?: string;
+    image_url?: string;
+    brand?: string;
+    category?: string;
+    calories?: number;
+    protein?: number;
+    carbs?: number;
+    fat?: number;
+    quantity?: string;
+    packaging?: string;
+    country?: string;
+  },
+  userId?: string
+): Promise<string | null> => {
+  // Redirigir a la nueva función más inteligente
+  return upsertPublicProductSafe(productData, userId);
+};
+
+export const updatePublicProduct = async (
+  productId: string, 
+  updates: Partial<PublicProduct>
+): Promise<boolean> => {
+  // Esta función ya no se usa - mantenida solo para compatibilidad
+  console.log('⚠️ updatePublicProduct está deprecated. Usar createPublicProductIfNotExists en su lugar.');
+  return false;
+};
+
+export const searchPublicProducts = async (searchTerm: string, limit: number = 20): Promise<PublicProduct[]> => {
+  try {
+    console.log('🔍 Buscando en ws_public_products:', { searchTerm, limit });
+
     // First try with RPC function (if it exists after migration)
     try {
       const { data: rpcData, error: rpcError } = await supabase
@@ -65,31 +146,50 @@ export const searchPublicProducts = async (
           limit_count: limit
         });
 
-      if (!rpcError) {
+      if (!rpcError && rpcData) {
+        console.log('✅ RPC search_public_products funcionó:', rpcData.length, 'resultados');
         return rpcData || [];
       }
+      console.log('ℹ️ RPC no disponible, usando query directa');
     } catch (_rpcErr) {
-      // RPC function doesn't exist, fall back to direct query
+      console.log('ℹ️ RPC function no existe, usando query directa');
     }
 
     // Fallback: Use direct query (works with both table and VIEW)
+    console.log('🔍 Probando query directa en public_products...');
     const { data, error } = await supabase
       .from('public_products')
       .select('*')
-      .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%`)
+      .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,brand.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%,barcode.eq.${searchTerm}`)
       .order('verified', { ascending: false })
       .order('verification_count', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) {
-      console.error('Error buscando productos públicos:', error);
+      console.error('❌ Error buscando productos públicos:', error);
       return [];
     }
 
+    console.log('✅ Búsqueda directa completada:', data?.length || 0, 'resultados');
+    
+    // Si no hay resultados y es un código numérico, intentar también búsqueda por nombre
+    if ((!data || data.length === 0) && /^\d+$/.test(searchTerm)) {
+      console.log('🔍 Probando búsqueda alternativa por nombre...');
+      const { data: altData, error: altError } = await supabase
+        .from('public_products')
+        .select('*')
+        .limit(5); // Solo para ver si hay datos en la tabla
+
+      if (!altError && altData) {
+        console.log('📊 Datos disponibles en public_products:', altData.length, 'registros');
+        console.log('📋 Muestra:', altData.slice(0, 3).map(p => ({ name: p.name, barcode: p.barcode })));
+      }
+    }
+    
     return data || [];
   } catch (error) {
-    console.error('Error en searchPublicProducts:', error);
+    console.error('❌ Error en searchPublicProducts:', error);
     return [];
   }
 };

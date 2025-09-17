@@ -185,15 +185,40 @@ export const getProducts = async (businessId?: string): Promise<Product[]> => {
   }
 };
 
+// Obtener productos por business_id sin filtrar por user_id
+// Útil para paneles o diagnósticos donde algunas filas históricas carecen de user_id
+export const getProductsByBusiness = async (businessId: string): Promise<Product[]> => {
+  try {
+    if (!businessId) return [];
+
+    // Timeout corto para evitar bloqueos
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('ProductsByBusiness timeout')), 5000)
+    );
+
+    const queryPromise = supabase
+      .from('ws_products')
+      .select('*')
+      .eq('business_id', businessId)
+      .order('created_at', { ascending: false });
+
+    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+    if (error) {
+      console.warn('⚠️ getProductsByBusiness error:', error.message);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('⚠️ getProductsByBusiness exception:', err);
+    return [];
+  }
+};
+
 export const getProduct = async (id: string): Promise<Product | null> => {
   try {
     const { data, error } = await supabase
       .from('ws_products')
-      .select(`
-        *,
-        ws_categories(name),
-        ws_suppliers(name)
-      `)
+      .select('*')
       .eq('id', id)
       .single();
 

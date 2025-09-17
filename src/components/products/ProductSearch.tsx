@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, ExternalLink, Filter, Loader2, Package, Search } from 'lucide-react';
 import { searchProductsFromAllApis, ProductApiResult } from '@/services/api/productApis';
-import { searchPublicProducts, convertToProductApiResult } from '@/services/api/publicProductsApi';
+import { searchPublicProducts, convertToProductApiResult, upsertPublicProductSafe } from '@/services/api/publicProductsApi';
 import Button from '@/components/ui/Button';
 
 interface ProductSearchProps {
@@ -13,7 +13,8 @@ interface ProductSearchProps {
 export default function ProductSearch({ onProductSelect, onClose }: ProductSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
-  const [products, setProducts] = useState<ProductApiResult[]>([]);
+  const [publicProducts, setPublicProducts] = useState<ProductApiResult[]>([]);
+  const [externalProducts, setExternalProducts] = useState<ProductApiResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [categories, setCategories] = useState<string[]>([]);
@@ -85,36 +86,106 @@ export default function ProductSearch({ onProductSelect, onClose }: ProductSearc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showScanner]);
 
-  const handleSearch = async (valueOverride?: string) => {
-    const term = (valueOverride ?? searchQuery).trim();
-    if (!term) return;
+  // Función para enriquecer productos - crear productos de APIs externas si no existen
+  // o enriquecer campos vacíos de productos existentes
+  const enrichExistingProducts = async (publicProducts: ProductApiResult[], externalProducts: ProductApiResult[]) => {
+    for (const externalProduct of externalProducts) {
+      if (!externalProduct.barcode) {
+        console.log(`⚠️ Producto externo sin código de barras: ${externalProduct.name}`);
+        continue;
+      }
+
+      // Verificar si este producto externo ya existe en nuestra base de datos
+      const existingProduct = publicProducts.find(pub => 
+        pub.barcode === externalProduct.barcode
+      );
+      
+      if (existingProduct) {
+        console.log(`🔄 Producto existe, verificando campos vacíos: ${existingProduct.name}`);
+        console.log('� Campos actuales vs nuevos:', {
+          description: { actual: existingProduct.description || 'VACÍO', nuevo: externalProduct.description || 'N/A' },
+          brand: { actual: existingProduct.brand || 'VACÍO', nuevo: externalProduct.brand || 'N/A' },
+          image: { actual: existingProduct.image || 'VACÍO', nuevo: externalProduct.image || 'N/A' }
+        });
+      } else {
+        console.log(`🆕 Producto nuevo de API externa: ${externalProduct.name}`);
+      }
+      
+      // Usar la función upsert que crea o actualiza solo campos vacíos
+      const productId = await upsertPublicProductSafe({
+        barcode: externalProduct.barcode,
+        name: externalProduct.name,
+        description: externalProduct.description,
+        image_url: externalProduct.image,
+        brand: externalProduct.brand,
+        category: externalProduct.category,
+        calories: externalProduct.nutrition_info?.calories,
+        protein: externalProduct.nutrition_info?.protein,
+        carbs: externalProduct.nutrition_info?.carbs,
+        fat: externalProduct.nutrition_info?.fat,
+        quantity: externalProduct.quantity,
+        packaging: externalProduct.packaging,
+        country: externalProduct.country
+      });
+      
+      if (productId) {
+        if (existingProduct) {
+          console.log('✅ Campos vacíos actualizados en producto existente ID:', productId);
+        } else {
+          console.log('✅ Nuevo producto creado en ws_public_products con ID:', productId);
+          
+          // Solo agregar a la lista si es verdaderamente nuevo
+          const newProduct: ProductApiResult = {
+            ...externalProduct,
+            id: productId,
+            source: 'api',
+            api_name: 'ws_public_products_new'
+          };
+          
+          setPublicProducts(prev => [...prev, newProduct]);
+        }
+      } else {
+        console.log('❌ Error al procesar producto en ws_public_products');
+      }
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
 
     setLoading(true);
+    setPublicProducts([]);
+    setExternalProducts([]);
     setSearched(true);
 
     try {
-      // Buscar en la tabla pública
-      const publicResultsRaw = await searchPublicProducts(term, 20);
-      const publicResults: ProductApiResult[] = publicResultsRaw.map(convertToProductApiResult);
+      // Buscar en ws_public_products primero
+      console.log('🔍 Iniciando búsqueda en ws_public_products...');
+      const publicResults = await searchPublicProducts(searchQuery);
+      console.log('📋 Resultados ws_public_products:', publicResults.length);
+      
+      // Convertir a ProductApiResult para compatibilidad
+      const convertedPublicResults = publicResults.map(convertToProductApiResult);
+      setPublicProducts(convertedPublicResults);
 
       // Buscar en APIs externas
-      const apiResults = await searchProductsFromAllApis({
-        query: term,
-        category: selectedCategory || undefined,
-        limit: 20,
-        barcodeGlobal
+      console.log('🔍 Iniciando búsqueda en APIs externas...');
+      const externalResults = await searchProductsFromAllApis({
+        query: searchQuery,
+        barcodeGlobal: barcodeGlobal
       });
+      console.log('📋 Resultados APIs externas:', externalResults.length);
+      setExternalProducts(externalResults);
 
-      // Combinar y eliminar duplicados por código de barras
-      const allResults = [...publicResults, ...apiResults];
-      const uniqueResults = allResults.filter((product, index, self) =>
-        product.barcode &&
-        index === self.findIndex(p => p.barcode === product.barcode)
-      );
-      setProducts(uniqueResults);
+      // Si encontramos productos en APIs externas que no están en ws_public_products,
+      // crear esos productos nuevos automáticamente
+      if (externalResults.length > 0) {
+        console.log('🔄 Verificando si hay productos nuevos para agregar...');
+        await enrichExistingProducts(convertedPublicResults, externalResults);
+      }
+
     } catch (error) {
-      console.error('Error buscando productos:', error);
-      setProducts([]);
+      console.error('❌ Error en búsqueda:', error);
     } finally {
       setLoading(false);
     }
@@ -123,7 +194,8 @@ export default function ProductSearch({ onProductSelect, onClose }: ProductSearc
   // Permitir inyectar un valor (desde cámara) y mantenerlo visible en el input
   const handleSearchWithValue = async (value: string) => {
     setSearchQuery(value);
-    await handleSearch(value);
+    // Esperar a que el estado se actualice antes de buscar
+    setTimeout(() => handleSearch(), 0);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -262,7 +334,7 @@ export default function ProductSearch({ onProductSelect, onClose }: ProductSearc
               </div>
             )}
 
-            {searched && !loading && products.length === 0 && (
+            {searched && !loading && publicProducts.length === 0 && externalProducts.length === 0 && (
               <div className="text-center py-12">
                 <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -274,9 +346,9 @@ export default function ProductSearch({ onProductSelect, onClose }: ProductSearc
               </div>
             )}
 
-            {products.length > 0 && (
+            {(publicProducts.length + externalProducts.length) > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {products.map((product) => (
+                {[...publicProducts, ...externalProducts].map((product) => (
                   <div
                     key={product.id}
                     className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
@@ -398,8 +470,8 @@ export default function ProductSearch({ onProductSelect, onClose }: ProductSearc
         <div className="p-6 border-t bg-gray-50 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-600">
-              {products.length > 0 && (
-                <span>{products.length} productos encontrados</span>
+              {(publicProducts.length > 0 || externalProducts.length > 0) && (
+                <span>{publicProducts.length + externalProducts.length} productos encontrados</span>
               )}
             </div>
             <Button

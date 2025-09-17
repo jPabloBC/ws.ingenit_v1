@@ -1,4 +1,4 @@
-import { supabaseAdmin as supabase } from './admin';
+import { supabase } from './client';
 
 export interface Sale {
   id: string;

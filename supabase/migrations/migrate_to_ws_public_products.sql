@@ -112,7 +112,8 @@ AS $$
     name ILIKE '%' || search_term || '%' OR
     description ILIKE '%' || search_term || '%' OR
     brand ILIKE '%' || search_term || '%' OR
-    category ILIKE '%' || search_term || '%'
+    category ILIKE '%' || search_term || '%' OR
+    barcode = search_term
   ORDER BY verified DESC, verification_count DESC, created_at DESC
   LIMIT limit_count;
 $$;

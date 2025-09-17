@@ -1,7 +1,5 @@
-'use client';
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabaseAdmin } from '@/services/supabase/admin';
 import { supabase } from '@/services/supabase/client';
 import { sessionsService } from '@/services/supabase/sessions';
 // TODO: Implement createProfileService
@@ -52,7 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: { session }, error } = await supabase.auth.getSession();
         if (!active) return;
         if (error) {
-          console.log('[Auth] getSession error:', error.message);
+          // console.log('[Auth] getSession error:', error.message);
           setLoading(false);
           return;
         }
@@ -65,7 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Expiration check
           const now = Date.now() / 1000;
           if (session.expires_at && session.expires_at < now) {
-            console.log('[Auth] Session expired at mount');
+            // console.log('[Auth] Session expired at mount');
             await supabase.auth.signOut();
             if (!active) return;
             setSession(null);
@@ -81,7 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoading(false);
         }
       } catch (e) {
-        console.error('[Auth] init error', e);
+  // console.error('[Auth] init error', e);
         if (active) setLoading(false);
       }
     };
@@ -90,12 +88,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!active) return;
-      console.log('🔄 Auth state change:', event, !!session?.user);
+  // console.log('🔄 Auth state change:', event, !!session?.user);
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
         try {
-          const { data: userData } = await supabaseAdmin
+          const { data: userData } = await supabase
             .from('ws_users')
             .select('email_verified')
             .eq('email', session.user.email)
@@ -106,7 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUserRole(null);
           }
         } catch (err) {
-          console.error('[Auth] email verification check failed', err);
+          // console.error('[Auth] email verification check failed', err);
           if (session.user.email_confirmed_at) {
             await loadUserRole(session.user.id);
           } else {
@@ -139,10 +137,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      console.log('Loading user role for:', userId);
+  // console.log('Loading user role for:', userId);
       
       // Primero verificar si el campo role existe
-      const { data: profileData, error: profileError } = await supabaseAdmin
+      const { data: profileData, error: profileError } = await supabase
         .from('ws_users')
         .select('role')
         .eq('user_id', userId)
@@ -151,19 +149,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (profileError) {
         // Si el perfil no existe, solo establecer rol por defecto
         if (profileError.code === 'PGRST116' || profileError.message?.includes('No rows found')) {
-          console.log('Profile not found, using default role');
+          // console.log('Profile not found, using default role');
           setUserRole('customer'); // Default role
           return;
         }
         // Solo mostrar error si no es un error de "no encontrado"
-        console.error('Error loading profile:', profileError);
+  // console.error('Error loading profile:', profileError);
         setUserRole('user'); // Default role
         return;
       }
 
       // Si el campo role no existe, usar 'user' por defecto
       if (!profileData || !('role' in profileData)) {
-        console.log('Role field not found, using default: user');
+  // console.log('Role field not found, using default: user');
         setUserRole('user');
         return;
       }

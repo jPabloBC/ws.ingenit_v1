@@ -39,6 +39,7 @@ export const businessesService = {
   // Obtener todos los negocios del usuario
   getUserBusinesses: async (userId: string): Promise<Business[]> => {
     try {
+  // console.log('🔍 BusinessService - Buscando negocios para userId:', userId);
       const { data, error } = await supabase
         .from('ws_businesses')
         .select('*')
@@ -47,13 +48,14 @@ export const businessesService = {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching user businesses:', error);
+        console.error('❌ BusinessService - Error fetching user businesses:', error);
         return [];
       }
 
+  // console.log('📋 BusinessService - Negocios encontrados:', data?.length || 0, data);
       return data || [];
     } catch (error) {
-      console.error('Error in getUserBusinesses:', error);
+      console.error('❌ BusinessService - Error in getUserBusinesses:', error);
       return [];
     }
   },

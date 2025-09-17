@@ -6,6 +6,8 @@ export async function POST(request: NextRequest) {
   try {
     const emailData = await request.json();
     console.log('📧 Recibiendo solicitud de email:', { to: emailData.to, subject: emailData.subject });
+    console.log('🔐 Configuración EMAIL_USER:', process.env.EMAIL_USER);
+    console.log('🔐 EMAIL_PASS configurado:', !!process.env.EMAIL_PASS);
 
     // Usar directamente los datos del email
     const emailContent = {
@@ -14,6 +16,15 @@ export async function POST(request: NextRequest) {
       html: emailData.html,
       text: emailData.text
     };
+
+    // Verificar variables de entorno
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.error('❌ Variables de entorno de email no configuradas');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Variables de entorno EMAIL_USER o EMAIL_PASS no configuradas' 
+      }, { status: 500 });
+    }
 
     // Configurar Nodemailer con Titan SMTP
     const transporter = nodemailer.createTransport({
@@ -25,6 +36,19 @@ export async function POST(request: NextRequest) {
         pass: process.env.EMAIL_PASS
       }
     });
+
+    // Verificar la conexión
+    console.log('🔗 Verificando conexión SMTP...');
+    try {
+      await transporter.verify();
+      console.log('✅ Conexión SMTP verificada');
+    } catch (verifyError) {
+      console.error('❌ Error verificando conexión SMTP:', verifyError);
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Error de conexión SMTP: ' + (verifyError as Error).message 
+      }, { status: 500 });
+    }
 
     // Configurar opciones del correo
     const mailOptions = {

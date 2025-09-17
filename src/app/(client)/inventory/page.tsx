@@ -7,17 +7,167 @@ import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { getProducts, deleteProduct } from '@/services/supabase/products';
+import { getProducts, deleteProduct, updateProduct } from '@/services/supabase/products';
 import { getCategories } from '@/services/supabase/categories';
 import toast from 'react-hot-toast';
 import { importChileProducts, importProductByBarcode } from '@/services/integrations/openFoodFacts';
 import SecurityGuard from '@/components/SecurityGuard';
+
+// Modal simple para editar stock
+function EditStockModal({ open, onClose, product, onSave }: any) {
+  const [form, setForm] = useState({
+    stock: product?.stock || 0,
+    min_stock: product?.min_stock || 0,
+    price: product?.price || 0,
+    cost: product?.cost || 0,
+  });
+
+  // Funciones de formato para el modal
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat('es-CL').format(num);
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
+
+  // Función para formatear valores en inputs
+  const formatInputValue = (value: any) => {
+    if (!value || value === '') return '';
+    const num = parseFloat(value);
+    if (isNaN(num)) return '';
+    return formatNumber(num);
+  };
+
+  // Función para extraer número de string formateado
+  const parseFormattedNumber = (value: string) => {
+    if (!value) return '';
+    return value.replace(/\./g, '');
+  };
+
+  useEffect(() => {
+    if (product) {
+      setForm({
+        stock: product.stock || 0,
+        min_stock: product.min_stock || 0,
+        price: product.price || 0,
+        cost: product.cost || 0,
+      });
+    }
+  }, [product]);
+
+  if (!open || !product) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96 max-w-md">
+        <h3 className="text-lg font-bold mb-2">Editar Stock - {product.name}</h3>
+        <div className="text-sm text-gray-600 mb-4">
+          <p>Stock actual: {formatNumber(product.stock)} | Precio: {formatCurrency(product.price)} | Costo: {formatCurrency(product.cost)}</p>
+        </div>
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          onSave({
+            stock: Number(form.stock),
+            min_stock: Number(form.min_stock),
+            price: Number(form.price),
+            cost: Number(form.cost),
+          });
+        }} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Stock</label>
+            <input 
+              type="text" 
+              value={formatInputValue(form.stock)} 
+              onChange={(e) => {
+                const rawValue = parseFormattedNumber(e.target.value);
+                setForm({...form, stock: rawValue});
+              }}
+              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+              placeholder="1.000"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Stock Mínimo</label>
+            <input 
+              type="text" 
+              value={formatInputValue(form.min_stock)} 
+              onChange={(e) => {
+                const rawValue = parseFormattedNumber(e.target.value);
+                setForm({...form, min_stock: rawValue});
+              }}
+              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+              placeholder="100"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Precio</label>
+            <div className="relative">
+              <span className="absolute left-3 top-2 text-gray-500">$</span>
+              <input 
+                type="text" 
+                value={formatInputValue(form.price)} 
+                onChange={(e) => {
+                  const rawValue = parseFormattedNumber(e.target.value);
+                  setForm({...form, price: rawValue});
+                }}
+                className="w-full border rounded pl-8 pr-12 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                placeholder="1.000"
+              />
+              <span className="absolute right-3 top-2 text-gray-500 text-sm">CLP</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Formato: {form.price ? formatCurrency(Number(form.price)) : '$0'}</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Costo</label>
+            <div className="relative">
+              <span className="absolute left-3 top-2 text-gray-500">$</span>
+              <input 
+                type="text" 
+                value={formatInputValue(form.cost)} 
+                onChange={(e) => {
+                  const rawValue = parseFormattedNumber(e.target.value);
+                  setForm({...form, cost: rawValue});
+                }}
+                className="w-full border rounded pl-8 pr-12 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                placeholder="1.000"
+              />
+              <span className="absolute right-3 top-2 text-gray-500 text-sm">CLP</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Formato: {form.cost ? formatCurrency(Number(form.cost)) : '$0'}</p>
+          </div>
+          <div className="flex justify-end gap-2 mt-6">
+            <button 
+              type="button" 
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+            >
+              Cancelar
+            </button>
+            <button 
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Guardar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 interface Product {
   id: string;
   name: string;
   description: string;
   sku: string;
+  barcode?: string | null;
   price: number;
   cost: number;
   stock: number;
@@ -25,6 +175,22 @@ interface Product {
   category_id: string;
   supplier_id: string | null;
   image_url: string | null;
+  brand?: string | null;
+  user_id?: string | null;
+  store_type?: string | null;
+  business_id?: string | null;
+  app_id?: string | null;
+  general_name?: string | null;
+  quantity?: string | null;
+  packaging?: string | null;
+  labels?: string[] | null;
+  categories_list?: string[] | null;
+  countries_sold?: string[] | null;
+  origin_ingredients?: string | null;
+  manufacturing_places?: string | null;
+  traceability_code?: string | null;
+  official_url?: string | null;
+  off_metadata?: any | null;
   created_at: string;
   updated_at: string;
   ws_categories?: { name: string };
@@ -45,6 +211,7 @@ export default function Inventory() {
   const [barcode, setBarcode] = useState('');
   const [loadingData, setLoadingData] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
+  const [editStockModal, setEditStockModal] = useState<{ open: boolean; product: Product | null }>({ open: false, product: null });
 
   useEffect(() => {
     if (!user) {
@@ -153,8 +320,23 @@ export default function Inventory() {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',
-      currency: 'CLP'
+      currency: 'CLP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(amount);
+  };
+
+  const formatCurrencyWithDecimals = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(amount);
+  };
+
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat('es-CL').format(num);
   };
 
   const lowStockCount = products.filter(p => p.stock <= p.min_stock).length;
@@ -290,7 +472,7 @@ export default function Inventory() {
               <div className="flex items-center">
                 <Package className="h-8 w-8 text-blue-600 mr-3" />
                 <div>
-                  <p className="text-2xl font-bold">{products.length}</p>
+                  <p className="text-2xl font-bold">{formatNumber(products.length)}</p>
                   <p className="text-sm text-gray-600">Total Productos</p>
                 </div>
               </div>
@@ -302,7 +484,7 @@ export default function Inventory() {
               <div className="flex items-center">
                 <AlertTriangle className="h-8 w-8 text-orange-600 mr-3" />
                 <div>
-                  <p className="text-2xl font-bold">{lowStockCount}</p>
+                  <p className="text-2xl font-bold">{formatNumber(lowStockCount)}</p>
                   <p className="text-sm text-gray-600">Stock Bajo</p>
                 </div>
               </div>
@@ -314,7 +496,7 @@ export default function Inventory() {
               <div className="flex items-center">
                 <AlertTriangle className="h-8 w-8 text-red-600 mr-3" />
                 <div>
-                  <p className="text-2xl font-bold">{outOfStockCount}</p>
+                  <p className="text-2xl font-bold">{formatNumber(outOfStockCount)}</p>
                   <p className="text-sm text-gray-600">Sin Stock</p>
                 </div>
               </div>
@@ -411,7 +593,7 @@ export default function Inventory() {
         {/* Products Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Productos ({filteredProducts.length})</CardTitle>
+            <CardTitle>Productos ({formatNumber(filteredProducts.length)})</CardTitle>
           </CardHeader>
           <CardContent>
             {filteredProducts.length === 0 ? (
@@ -432,21 +614,16 @@ export default function Inventory() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Producto
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        SKU
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Categoría
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Stock
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Precio
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Acciones
-                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Costo</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Código de Barras</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marca</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Metadatos OFF</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky right-0 bg-gray-50 z-10">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -462,21 +639,13 @@ export default function Inventory() {
                               />
                             )}
                             <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {product.name}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {product.description}
-                              </div>
+                              <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                              <div className="text-sm text-gray-500">{product.description}</div>
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {product.sku}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {categories.find(cat => cat.id === product.category_id)?.name || 'Sin categoría'}
-                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.sku}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{categories.find(cat => cat.id === product.category_id)?.name || 'Sin categoría'}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                             product.stock === 0 
@@ -485,13 +654,34 @@ export default function Inventory() {
                               ? 'bg-orange-100 text-orange-800'
                               : 'bg-green-100 text-green-800'
                           }`}>
-                            {product.stock}
+                            {formatNumber(product.stock)}
                           </span>
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(product.price)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(product.cost)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.barcode || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.brand || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.supplier_id || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {formatCurrency(product.price)}
+                          {/* Botón para ver metadatos OFF extendidos */}
+                          {product.general_name || product.quantity || product.packaging || product.labels || product.categories_list ? (
+                            <Button size="sm" variant="outline" onClick={() => alert(JSON.stringify({
+                              general_name: product.general_name,
+                              quantity: product.quantity,
+                              packaging: product.packaging,
+                              labels: product.labels,
+                              categories_list: product.categories_list,
+                              countries_sold: product.countries_sold,
+                              origin_ingredients: product.origin_ingredients,
+                              manufacturing_places: product.manufacturing_places,
+                              traceability_code: product.traceability_code,
+                              official_url: product.official_url
+                            }, null, 2))}>
+                              Ver OFF
+                            </Button>
+                          ) : '-'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white z-10">
                           <div className="flex space-x-2">
                             <Button
                               size="sm"
@@ -499,6 +689,14 @@ export default function Inventory() {
                               onClick={() => router.push(`/inventory/edit/${product.id}`)}
                             >
                               <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setEditStockModal({ open: true, product })}
+                              className="bg-gray-100 hover:bg-gray-200 text-gray-600 border-gray-200"
+                            >
+                              Stock
                             </Button>
                             <Button
                               size="sm"
@@ -518,6 +716,29 @@ export default function Inventory() {
           </CardContent>
         </Card>
         </div>
+
+      {/* Modal edición rápida de stock */}
+      <EditStockModal
+        open={editStockModal.open}
+        product={editStockModal.product}
+        onClose={() => setEditStockModal({ open: false, product: null })}
+        onSave={async (form: { stock: number; min_stock: number; price: number; cost: number }) => {
+          if (!editStockModal.product) return;
+          const res = await updateProduct(editStockModal.product.id, {
+            stock: Number(form.stock),
+            min_stock: Number(form.min_stock),
+            price: Number(form.price),
+            cost: Number(form.cost),
+          }, editStockModal.product.user_id || '');
+          if (res.success) {
+            toast.success('Producto actualizado');
+            setEditStockModal({ open: false, product: null });
+            await loadData();
+          } else {
+            toast.error(res.error || 'Error al actualizar');
+          }
+        }}
+      />
     </SecurityGuard>
   );
 } 

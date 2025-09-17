@@ -130,14 +130,20 @@ export default function Register() {
 
       // 4. Send verification email (best-effort)
       try {
+        console.log('📧 Intentando enviar email de verificación a:', formData.email);
+        console.log('🔑 Token generado:', token);
         const res = await sendVerificationEmail(formData.email, formData.name, token);
+        console.log('📬 Resultado del envío:', res);
         if (res.success) {
           toast.success("Cuenta creada. Verifica tu correo.");
+          console.log('✅ Email enviado exitosamente');
         } else {
-          toast("Cuenta creada. Revisa tu correo o spam.");
+          console.error('❌ Error al enviar email:', res.error);
+          toast.error("Cuenta creada pero error enviando email: " + (res.error || "Error desconocido"));
         }
-      } catch {
-        toast("Cuenta creada. Revisa tu correo o spam.");
+      } catch (emailError) {
+        console.error('❌ Error inesperado enviando email:', emailError);
+        toast.error("Cuenta creada pero error enviando email: " + (emailError instanceof Error ? emailError.message : "Error desconocido"));
       }
 
       setStep("success");
