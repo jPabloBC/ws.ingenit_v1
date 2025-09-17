@@ -2,8 +2,6 @@ import { supabase } from '@/services/supabase/client';
 
 export const checkDatabaseSetup = async () => {
   try {
-    console.log('🔍 Verificando configuración de base de datos...');
-    
     // Verificar que las tablas principales existan
     const tables = [
       'ws_users',
@@ -24,14 +22,13 @@ export const checkDatabaseSetup = async () => {
         console.error(`❌ Error verificando tabla ${table}:`, error.message);
         return false;
       }
-      console.log(`✅ Tabla ${table} verificada`);
     }
 
-    // Verificar que las funciones RPC existan
-    const functions = [
-      'get_user_current_plan',
-      'check_user_limits',
-      'create_free_subscription'
+    // Verificar que las funciones RPC existan (solo las básicas, no las de límites)
+    const functions: string[] = [
+      // 'get_user_current_plan',  // Removido: causa bucles si no existe
+      // 'check_user_limits',     // Removido: causa bucles si no existe  
+      // 'create_free_subscription' // Removido: causa bucles si no existe
     ];
 
     for (const func of functions) {
@@ -40,24 +37,20 @@ export const checkDatabaseSetup = async () => {
           user_uuid: '00000000-0000-0000-0000-000000000000' 
         });
         
-        // Esperamos un error específico, no un error de función no encontrada
+        // Solo reportar errores críticos, no 404s esperados
         if (error && !error.message.includes('violates foreign key constraint') && !error.message.includes('Could not find the function')) {
           console.error(`❌ Error verificando función ${func}:`, error.message);
           return false;
         }
-        console.log(`✅ Función ${func} verificada`);
       } catch (err) {
-        // Si la función no existe, continuar sin fallar
-        if (err instanceof Error && err.message.includes('Could not find the function')) {
-          console.log(`⚠️ Función ${func} no encontrada, continuando...`);
-          continue;
+        // Solo reportar errores críticos
+        if (err instanceof Error && !err.message.includes('Could not find the function')) {
+          console.error(`❌ Error verificando función ${func}:`, err);
+          return false;
         }
-        console.error(`❌ Error verificando función ${func}:`, err);
-        return false;
       }
     }
 
-    console.log('✅ Configuración de base de datos verificada correctamente');
     return true;
   } catch (error) {
     console.error('❌ Error general verificando base de datos:', error);

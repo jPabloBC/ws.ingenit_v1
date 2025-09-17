@@ -1,5 +1,7 @@
+
 'use client';
-// Removido: import no usado
+import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import ConnectivityError from './ConnectivityError';
 
@@ -12,31 +14,54 @@ export default function ConnectivityChecker({ children, fallback }: Connectivity
   const { isOnline, isSupabaseReachable, lastError, checkSupabaseConnectivity } = useConnectivity();
   const [isChecking, setIsChecking] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [hasAttempted, setHasAttempted] = useState(false);
+  const pathname = usePathname();
+
+  // Rutas donde no queremos bloquear por conectividad inicial (onboarding/auth)
+  const bypassPrefixes = ['/login', '/register', '/register-simple'];
+  const bypassExact = ['/select-business'];
+  const bypass = bypassExact.includes(pathname) || bypassPrefixes.some(p => pathname.startsWith(p));
 
   useEffect(() => {
-    // Verificar conectividad inicial
-    const checkInitialConnectivity = async () => {
+    let cancelled = false;
+    const run = async () => {
       if (!isOnline) {
         setShowError(true);
+        setHasAttempted(true);
         return;
       }
-
+      if (bypass) {
+        setHasAttempted(true);
+        return; // no bloqueo en rutas de onboarding/auth
+      }
       setIsChecking(true);
       const isReachable = await checkSupabaseConnectivity();
-      setShowError(!isReachable);
-      setIsChecking(false);
+      if (!cancelled) {
+        setShowError(!isReachable);
+        setIsChecking(false);
+        setHasAttempted(true);
+      }
     };
+    run();
 
-    checkInitialConnectivity();
-  }, [isOnline, checkSupabaseConnectivity]);
+    // Timeout de seguridad real (no se reinicia) para evitar spinner infinito
+    const safety = setTimeout(() => {
+      if (!cancelled) {
+        setIsChecking(false);
+        setHasAttempted(true);
+      }
+    }, 4500);
+    return () => { cancelled = true; clearTimeout(safety); };
+  // OJO: NO incluir isChecking aquí para que el timeout no se reinicie continuamente
+  }, [isOnline, checkSupabaseConnectivity, bypass]);
 
   // Si no hay conexión a internet
   if (!isOnline) {
     return fallback || <ConnectivityError showRetryButton={false} />;
   }
 
-  // Si hay conexión pero Supabase no es alcanzable
-  if (showError && !isSupabaseReachable) {
+  // Si hay conexión pero Supabase no es alcanzable tras intento
+  if (hasAttempted && showError && !isSupabaseReachable) {
     return fallback || (
       <ConnectivityError 
         onRetry={async () => {
@@ -51,7 +76,7 @@ export default function ConnectivityChecker({ children, fallback }: Connectivity
   }
 
   // Si está verificando conectividad
-  if (isChecking) {
+  if (!bypass && isChecking) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="text-center">

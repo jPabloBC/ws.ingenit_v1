@@ -21,28 +21,6 @@ const sansation = Sansation({
 export const metadata: Metadata = {
   title: "Ingenit Store Manager",
   description: "La solución completa para gestionar tu negocio",
-  icons: {
-    icon: [
-      {
-        url: "/assets/icon_ingenIT.png",
-        sizes: "32x32",
-        type: "image/png",
-      },
-      {
-        url: "/assets/icon_ingenIT.png",
-        sizes: "16x16",
-        type: "image/png",
-      },
-    ],
-    apple: [
-      {
-        url: "/assets/icon_ingenIT.png",
-        sizes: "180x180",
-        type: "image/png",
-      },
-    ],
-    shortcut: "/assets/icon_ingenIT.png",
-  },
 };
 
 export default function RootLayout({
@@ -53,10 +31,12 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${archivo.variable} ${sansation.variable}`}>
       <head>
-        {/* Favicon configuration for maximum browser compatibility */}
-        <link rel="icon" href="/assets/icon_ingenIT.png" type="image/png" sizes="32x32" />
-        <link rel="icon" href="/assets/icon_ingenIT.png" type="image/png" sizes="16x16" />
-        <link rel="shortcut icon" href="/assets/icon_ingenIT.png" type="image/png" />
+        <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+        <link rel="icon" href="/assets/icon_ingenIT.png" type="image/png" />
+        <link rel="icon" href="/assets/icon_ingenIT.png" sizes="16x16" type="image/png" />
+        <link rel="icon" href="/assets/icon_ingenIT.png" sizes="32x32" type="image/png" />
+        <link rel="icon" href="/assets/icon_ingenIT.png" sizes="48x48" type="image/png" />
+        <link rel="icon" href="/assets/icon_ingenIT.png" sizes="64x64" type="image/png" />
         <link rel="apple-touch-icon" href="/assets/icon_ingenIT.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/assets/icon_ingenIT.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/assets/icon_ingenIT.png" />
@@ -67,12 +47,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" sizes="72x72" href="/assets/icon_ingenIT.png" />
         <link rel="apple-touch-icon" sizes="60x60" href="/assets/icon_ingenIT.png" />
         <link rel="apple-touch-icon" sizes="57x57" href="/assets/icon_ingenIT.png" />
-        {/* Windows Tile icons */}
-        <meta name="msapplication-TileColor" content="#001a33" />
         <meta name="msapplication-TileImage" content="/assets/icon_ingenIT.png" />
-        {/* Android Chrome */}
-        <link rel="icon" type="image/png" sizes="192x192" href="/assets/icon_ingenIT.png" />
-        <link rel="icon" type="image/png" sizes="512x512" href="/assets/icon_ingenIT.png" />
       </head>
       <body className="font-body antialiased bg-gray10 text-blue1">
         <ErrorHandler />

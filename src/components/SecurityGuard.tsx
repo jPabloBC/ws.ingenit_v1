@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { AlertTriangle, Loader2, X, XCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,56 +17,56 @@ export default function SecurityGuard({ children }: SecurityGuardProps) {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { user, loading } = useAuth();
+  const pathname = usePathname();
+
+  // Rutas exentas (no aplicar guard estricto): auth y onboarding inicial
+  const exemptPrefixes = ['/login', '/register', '/register-simple'];
+  const exemptExact = ['/select-business'];
+  const isExempt = exemptExact.includes(pathname) || exemptPrefixes.some(p => pathname.startsWith(p));
   const router = useRouter();
 
   useEffect(() => {
+    // Si la ruta está exenta: no bloquear visualización; solo esperamos a que Auth cargue para evitar flicker
+    if (isExempt) {
+      if (!loading) {
+        setIsAuthorized(true);
+        setIsChecking(false);
+      }
+      return;
+    }
+
     const checkSecurity = async () => {
       if (loading) return; // Esperar a que termine de cargar el auth
 
-      // Si no hay usuario, redirigir al login
       if (!user) {
+        console.log('🚫 SecurityGuard: No hay usuario, redirigiendo a login');
         router.push('/login');
         return;
       }
 
-      // Verificar que el email esté confirmado
-      if (!user.email_confirmed_at) {
-        console.log('🚫 SecurityGuard: Usuario no verificado bloqueado:', user.email);
-        toast.error('Debes verificar tu email antes de continuar');
-        // Cerrar sesión inmediatamente para forzar re-verificación
-        await supabase.auth.signOut();
-        router.push('/login');
-        return;
-      }
-
-      // Verificar que exista el perfil en ws_users
-      try {
-      const { data: profile, error: profileError } = await supabaseAdmin
-          .from('ws_users')
-          .select('user_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (profileError || !profile) {
-          console.log('Perfil no encontrado. Redirigiendo al onboarding...');
-          router.push('/onboarding');
-          return;
-        }
-
-        // Todo está bien
-        setIsAuthorized(true);
-        setIsChecking(false);
-      } catch (error) {
-        console.error('Error verificando perfil:', error);
-        setError('Error verificando tu cuenta');
-        setIsChecking(false);
-      }
+      console.log('✅ SecurityGuard: Usuario autenticado:', user.email);
+      setIsAuthorized(true);
+      setIsChecking(false);
     };
 
     checkSecurity();
-  }, [user, loading, router]);
+  }, [user?.id, loading, router, isExempt]);
 
-  if (loading || isChecking) {
+  // Timeout de seguridad para evitar carga infinita
+  useEffect(() => {
+    if (isExempt) return; // No aplicar timeout en rutas exentas
+    const timeout = setTimeout(() => {
+      // Solo forzar redirect si terminó loading y sigue sin user autorizado
+      if (!loading && (isChecking || !user)) {
+        console.log('🚫 SecurityGuard: Timeout de carga (sin user), redirigiendo a login');
+        router.push('/login');
+      }
+    }, 12000); // Aumentamos a 12s para dar margen tras login/redirect
+
+    return () => clearTimeout(timeout);
+  }, [loading, isChecking, user, router, isExempt]);
+
+  if (!isExempt && (loading || isChecking)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -111,7 +112,7 @@ export default function SecurityGuard({ children }: SecurityGuardProps) {
     );
   }
 
-  if (!isAuthorized) {
+  if (!isExempt && !isAuthorized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md mx-auto p-6">

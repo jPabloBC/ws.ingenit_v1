@@ -24,6 +24,7 @@ export interface SaleItem {
   quantity: number;
   unit_price: number;
   total_price: number;
+  product_name?: string;
   product?: {
     name: string;
     sku: string;
@@ -37,78 +38,35 @@ export interface CreateSaleData {
   payment_method: string;
   status: string;
   notes?: string;
+  business_id?: string; // soporte multi-negocio
+  app_id?: string; // identificador de la app, NOT NULL en ws_sales
   items: Omit<SaleItem, 'id' | 'sale_id'>[];
 }
 
 export const getSales = async (): Promise<Sale[]> => {
   try {
-    console.log('Fetching sales...');
-    
-    // Primero intentar una consulta simple para verificar que la tabla existe
-    const { data: simpleData, error: simpleError } = await supabase
+    console.log('Fetching sales with items and products...');
+    const { data, error } = await supabase
       .from('ws_sales')
-      .select('id, total_amount, payment_method, status, created_at')
-      .order('created_at', { ascending: false })
-      .limit(10);
+      .select(`
+        *,
+        ws_sale_items(*)
+      `)
+      .order('created_at', { ascending: false });
 
-    if (simpleError) {
-      console.error('Error en consulta simple:', simpleError);
+    if (error) {
+      console.error('Error fetching sales with joins:', error);
       return [];
     }
 
-    console.log('Consulta simple exitosa, obtenidos', simpleData?.length || 0, 'registros');
+    // Mapear ws_sale_items a items para compatibilidad frontend
+    const mapped = (data || []).map((sale: any) => ({
+      ...sale,
+      items: sale.ws_sale_items || []
+    }));
 
-    // Ahora intentar la consulta completa con joins
-    try {
-      // Usar una consulta SQL directa para evitar problemas con el esquema cache
-      const { data, error } = await supabase
-        .rpc('get_sales_with_items', {});
-
-      if (error) {
-        console.error('Error fetching sales with RPC:', error);
-        // Si falla la consulta RPC, intentar con joins automáticos
-        const { data: joinData, error: joinError } = await supabase
-          .from('ws_sales')
-          .select(`
-            *,
-            ws_customers(name, email),
-            ws_sale_items(
-              *,
-              ws_products(name, sku)
-            )
-          `)
-          .order('created_at', { ascending: false });
-
-        if (joinError) {
-          console.error('Error fetching sales with joins:', joinError);
-          // Si falla la consulta con joins, devolver los datos simples con valores por defecto
-          return (simpleData || []).map(item => ({
-            ...item,
-            sale_number: item.id || '',
-            customer_id: null,
-            notes: null,
-            updated_at: item.created_at || new Date().toISOString()
-          }));
-        }
-
-        console.log('Consulta con joins exitosa, obtenidos', joinData?.length || 0, 'registros');
-        return joinData || [];
-      }
-
-      console.log('Consulta RPC exitosa, obtenidos', data?.length || 0, 'registros');
-      console.log('Primera venta de RPC:', data?.[0]);
-      return data || [];
-    } catch (joinError) {
-      console.error('Error en consulta con joins:', joinError);
-      // Si hay un error en los joins, devolver los datos simples con valores por defecto
-      return (simpleData || []).map(item => ({
-        ...item,
-        sale_number: item.id || '',
-        customer_id: null,
-        notes: null,
-        updated_at: item.created_at || new Date().toISOString()
-      }));
-    }
+    console.log('Consulta con joins exitosa, obtenidos', mapped.length, 'registros');
+    return mapped;
   } catch (error) {
     console.error('Error in getSales:', error);
     return [];
@@ -145,27 +103,80 @@ export const getSale = async (id: string): Promise<Sale | null> => {
 export const createSale = async (saleData: CreateSaleData): Promise<{ success: boolean; data?: Sale; error?: string }> => {
   try {
     console.log('Creating sale:', saleData);
+
+    // --- Validación de stock previa (no insertar venta si algún item excede stock) ---
+    if (!saleData.items || saleData.items.length === 0) {
+      return { success: false, error: 'La venta no contiene ítems' };
+    }
+
+    const uniqueProductIds = Array.from(new Set(saleData.items.map(i => i.product_id)));
+    const { data: productStocks, error: stockError } = await supabase
+      .from('ws_products')
+      .select('id, stock')
+      .in('id', uniqueProductIds);
+
+    if (stockError) {
+      console.error('Error fetching product stocks:', stockError);
+      return { success: false, error: 'No se pudieron validar los stocks' };
+    }
+
+    const stockMap = new Map<string, number>(
+      (productStocks || []).map(p => [p.id, (p as any).stock || 0])
+    );
+
+    for (const item of saleData.items) {
+      const available = stockMap.get(item.product_id);
+      if (available === undefined) {
+        return { success: false, error: 'Producto inexistente en inventario' };
+      }
+      if (available < item.quantity) {
+        return { success: false, error: `Stock insuficiente para producto ${item.product_id} (solicitado ${item.quantity}, disponible ${available})` };
+      }
+    }
     
     // Preparar los datos de la venta sin la columna notes si no existe
+    const DEFAULT_APP_ID = '550e8400-e29b-41d4-a716-446655440000';
+    const resolvedAppId = saleData.app_id || DEFAULT_APP_ID;
+
     const saleInsertData: any = {
       user_id: saleData.user_id, // Agregar user_id
       customer_id: saleData.customer_id,
       total_amount: saleData.total_amount,
       payment_method: saleData.payment_method,
-      status: saleData.status
+      status: saleData.status,
+      app_id: resolvedAppId
     };
+
+    // Agregar business_id si está disponible
+    if (saleData.business_id) {
+      saleInsertData.business_id = saleData.business_id;
+    }
     
     // Solo agregar notes si está definido
     if (saleData.notes !== undefined && saleData.notes !== null) {
       saleInsertData.notes = saleData.notes;
     }
     
-    const { data, error } = await supabase
-      .from('ws_sales')
-      .insert([saleInsertData])
-      .select()
-      .single();
+    const tryInsert = async (payload: any) => {
+      return await supabase
+        .from('ws_sales')
+        .insert([payload])
+        .select()
+        .single();
+    };
 
+    let { data, error } = await tryInsert(saleInsertData);
+    if (error) {
+      // Si la columna business_id no existe en este entorno, reintentar sin ella
+      const msg = (error.message || '').toLowerCase();
+      if ((error.code === 'PGRST204' || msg.includes('business_id')) && saleInsertData.business_id) {
+        console.warn('⚠️ ws_sales.business_id no existe en el esquema actual. Reintentando sin business_id.');
+        delete saleInsertData.business_id;
+        const retry = await tryInsert(saleInsertData);
+        data = retry.data as any;
+        error = retry.error as any;
+      }
+    }
     if (error) {
       console.error('Error creating sale:', error);
       return { success: false, error: error.message };
@@ -173,39 +184,126 @@ export const createSale = async (saleData: CreateSaleData): Promise<{ success: b
 
     // Crear los items de la venta
     if (data && saleData.items.length > 0) {
-      const saleItems = saleData.items.map(item => ({
+      // Generador de UUID v4 compatible en navegador y Node
+      const generateUUID = (): string => {
+        try {
+          const g: any = (globalThis as any);
+          if (g?.crypto?.randomUUID) return g.crypto.randomUUID();
+        } catch (_) {}
+        const rnd = (a?: number) => ((a ?? Math.random()) * 16) | 0;
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = rnd();
+          const v = c === 'x' ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      };
+
+      // Intento 1: insertar sin id, esperando que la BD tenga default en id
+      let includeBusinessId = Boolean(saleData.business_id);
+      // Asegura que cada item de venta guarde el nombre del producto
+      const baseMap = (withId: boolean) => saleData.items.map(item => ({
+        ...(withId ? { id: generateUUID() } : {}),
         ...item,
-        sale_id: data.id
+        product_name: item.product_name || '',
+        sale_id: data.id,
+        app_id: resolvedAppId,
+        created_at: new Date().toISOString(),
+        ...(includeBusinessId && saleData.business_id ? { business_id: saleData.business_id } : {})
       }));
 
-      const { error: itemsError } = await supabase
-        .from('ws_sale_items')
-        .insert(saleItems);
-
-      if (itemsError) {
-        console.error('Error creating sale items:', itemsError);
-        return { success: false, error: itemsError.message };
+      let saleItemsBase = baseMap(false);
+      let itemsInserted = saleItemsBase;
+      let insertError: any = null;
+      // Primer intento
+      {
+        const { error: itemsError1 } = await supabase
+          .from('ws_sale_items')
+          .insert(saleItemsBase);
+        insertError = itemsError1;
       }
 
-      // Decrementar stock de los productos involucrados
-      for (const item of saleItems) {
-        try {
-          const { data: productRow, error: fetchErr } = await supabase
-            .from('ws_products')
-            .select('id, stock')
-            .eq('id', item.product_id)
-            .single();
-          if (fetchErr || !productRow) continue;
-          const newStock = Math.max(0, (productRow.stock || 0) - (item.quantity || 0));
-          const { error: updErr } = await supabase
-            .from('ws_products')
-            .update({ stock: newStock })
-            .eq('id', item.product_id);
-          if (updErr) {
-            console.error('Error updating product stock:', updErr);
+      // Si la columna business_id no existe en esta tabla, reintentar sin business_id
+      if (insertError) {
+        const code0 = insertError.code || '';
+        const message0 = insertError.message || '';
+        const undefinedBusiness = code0 === '42703' || /business_id|column .* does not exist/i.test(message0);
+        if (includeBusinessId && undefinedBusiness) {
+          includeBusinessId = false;
+          saleItemsBase = baseMap(false);
+          const { error: itemsError0b } = await supabase
+            .from('ws_sale_items')
+            .insert(saleItemsBase);
+          insertError = itemsError0b;
+        }
+      }
+
+      if (insertError) {
+        const code1 = insertError.code || '';
+        const message1 = insertError.message || '';
+        const isNullId = code1 === '23502' && /column "id"|columna "id"|null value in column "id"/i.test(message1);
+        if (isNullId) {
+          // Intento 2: asignar UUIDs locales para id (si la columna es uuid, funcionará)
+          const saleItemsWithIds = baseMap(true);
+          const { error: itemsError2 } = await supabase
+            .from('ws_sale_items')
+            .insert(saleItemsWithIds);
+          if (itemsError2) {
+            console.error('Error creating sale items (fallback with UUID):', itemsError2);
+            const code2 = (itemsError2 as any).code || '';
+            const message2 = (itemsError2 as any).message || '';
+            const typeMismatch = code2 === '22P02' || code2 === '42804' || /invalid input syntax|uuid|integer/i.test(message2);
+            if (typeMismatch) {
+              return {
+                success: false,
+                error:
+                  'No se pudo crear ws_sale_items: la columna id no tiene default y no es de tipo uuid. Ejecute fix-ws-sale-items-id-default.sql para configurar un default (secuencia o gen_random_uuid()).'
+              };
+            }
+            return { success: false, error: (itemsError2 as any).message };
           }
+          // Usaremos el arreglo con ids para las actualizaciones de stock
+          itemsInserted = saleItemsWithIds;
+        } else {
+          // Mejorar feedback de error de inserción de items
+          return { success: false, error: `No se pudieron guardar los productos de la venta: ${insertError.message}` };
+        }
+      }
+
+      // Decrementar stock de los productos involucrados con control optimista
+      for (const item of itemsInserted) {
+        try {
+          // Re-fetch para minimizar riesgo de condición de carrera
+            const { data: productRow, error: fetchErr } = await supabase
+              .from('ws_products')
+              .select('id, stock')
+              .eq('id', item.product_id)
+              .single();
+            if (fetchErr || !productRow) {
+              throw new Error(`No se pudo leer stock de producto ${item.product_id}`);
+            }
+            const currentStock = (productRow as any).stock || 0;
+            if (currentStock < item.quantity) {
+              throw new Error(`Stock insuficiente durante confirmación (producto ${item.product_id})`);
+            }
+            const newStock = currentStock - item.quantity;
+            // Control optimista: sólo actualizar si el stock sigue igual al leído
+            const { data: updData, error: updErr } = await supabase
+              .from('ws_products')
+              .update({ stock: newStock })
+              .eq('id', item.product_id)
+              .eq('stock', currentStock)
+              .select('id');
+            if (updErr || !updData || updData.length === 0) {
+              throw new Error(`Conflicto de stock al actualizar producto ${item.product_id}`);
+            }
         } catch (e) {
-          console.error('Unexpected error updating stock:', e);
+          console.error('Error controlado actualizando stock, iniciando rollback de venta:', e);
+          // Rollback best-effort: eliminar items y venta
+          if (data?.id) {
+            await supabase.from('ws_sale_items').delete().eq('sale_id', data.id);
+            await supabase.from('ws_sales').delete().eq('id', data.id);
+          }
+          return { success: false, error: (e as Error).message };
         }
       }
     }

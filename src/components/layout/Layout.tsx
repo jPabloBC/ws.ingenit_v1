@@ -2,6 +2,7 @@
 // Removido: import no usado
 import { ReactNode, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import Header from './Header';
 import DashboardHeader from './DashboardHeader';
 import Sidebar from './Sidebar';
@@ -14,22 +15,9 @@ interface LayoutProps {
 
 export default function Layout({ children, showSidebar = true, isLandingPage = false }: LayoutProps) {
   const { user, signOut } = useAuth();
+  const { storeConfig, loading: storeLoading } = useStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  
-  // Mock store config for now
-  const storeConfig = {
-    name: 'Mi Tienda',
-    type: 'restaurant',
-    modules: [
-      { name: 'Dashboard', path: '/dashboard', icon: 'Home' },
-      { name: 'Inventario', path: '/inventory', icon: 'Package' },
-      { name: 'Ventas', path: '/sales', icon: 'ShoppingCart' },
-      { name: 'Clientes', path: '/customers', icon: 'Users' },
-      { name: 'Reportes', path: '/reports', icon: 'BarChart' },
-      { name: 'Configuración', path: '/settings', icon: 'Settings' }
-    ]
-  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -57,10 +45,10 @@ export default function Layout({ children, showSidebar = true, isLandingPage = f
       {/* Header - Fixed */}
       {isLandingPage ? (
         <Header />
-      ) : user && storeConfig ? (
+      ) : user ? (
         <DashboardHeader
           user={user}
-          storeName={storeConfig.name}
+          storeName={storeConfig?.name || 'Mi Negocio'}
           onSignOut={handleSignOut}
           onStoreChange={handleStoreChange}
           onMenuClick={handleMenuClick}
@@ -72,19 +60,19 @@ export default function Layout({ children, showSidebar = true, isLandingPage = f
       {/* Main Content */}
       <div className="flex flex-1 min-h-0">
         {/* Sidebar - Fixed */}
-        {showSidebar && user && storeConfig && (
+        {showSidebar && user && !storeLoading && (
           <Sidebar
             isOpen={sidebarOpen}
             onClose={handleSidebarClose}
-            storeConfig={storeConfig}
+            storeConfig={storeConfig || { name: 'Mi Negocio', modules: [] }}
             isCollapsed={sidebarCollapsed}
             onToggleCollapse={handleSidebarToggleCollapse}
           />
         )}
 
         {/* Page Content - Scrollable */}
-        <main className={`flex-1 transition-all duration-300 overflow-auto pt-16 ${
-          showSidebar ? (sidebarCollapsed ? 'md:ml-16' : 'md:ml-64') : ''
+        <main className={`flex-1 transition-all duration-300 overflow-auto mt-20 ${
+          showSidebar ? (sidebarCollapsed ? 'md:ml-16' : 'md:ml-48') : ''
         }`}>
           {children}
         </main>

@@ -35,7 +35,7 @@ function AdminCustomersPage() {
     if (user) {
       loadCustomers();
     }
-  }, [user]);
+  }, [user?.id]);
 
   // Removido: función no usada
 

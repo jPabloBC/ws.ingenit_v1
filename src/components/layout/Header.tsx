@@ -9,55 +9,76 @@ import { usePathname } from "next/navigation";
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
-  const isRegisterPage = pathname === '/register';
+  const isRegisterPage = pathname === '/register' || pathname.startsWith('/register?');
   const isLoginPage = pathname === '/login';
   const isVerifyEmailPage = pathname === '/verify-email';
+  
+  // Detectar si estamos en pasos avanzados del registro (step 2, 3, 4)
+  const isInRegistrationFlow = isRegisterPage || isVerifyEmailPage;
 
   return (
     <header className="bg-white border-b border-blue13 fixed top-0 left-0 right-0 z-50 shadow-sm">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center space-x-3">
-            <Image
-              src="/assets/icon_ingenIT.png"
-              alt="Ingenit Store Manager"
-              width={120}
-              height={48}
-              className="h-12 w-auto"
-            />
-          </Link>
+          {isInRegistrationFlow ? (
+            <div className="flex items-center space-x-3">
+              <Image
+                src="/assets/icon_ingenIT.png"
+                alt="Ingenit Store Manager"
+                width={120}
+                height={120}
+                className="h-12 w-auto"
+                style={{ height: '3rem', width: 'auto' }}
+                priority
+              />
+            </div>
+          ) : (
+            <Link href="/" className="flex items-center space-x-3">
+              <Image
+                src="/assets/icon_ingenIT.png"
+                alt="Ingenit Store Manager"
+                width={120}
+                height={120}
+                className="h-12 w-auto"
+                style={{ height: '3rem', width: 'auto' }}
+                priority
+              />
+            </Link>
+          )}
 
           {/* Desktop Navigation Menu */}
-          <nav className="hidden lg:flex items-center space-x-8">
-            <Link 
-              href="/#features" 
-              className="text-gray2 hover:text-blue8 transition-colors font-medium text-sm"
-            >
-              Características
-            </Link>
-            <Link 
-              href="/#plans" 
-              className="text-gray2 hover:text-blue8 transition-colors font-medium text-sm"
-            >
-              Planes
-            </Link>
-            <Link 
-              href="/#pricing" 
-              className="text-gray2 hover:text-blue8 transition-colors font-medium text-sm"
-            >
-              Precios
-            </Link>
-            <Link 
-              href="/#contact" 
-              className="text-gray2 hover:text-blue8 transition-colors font-medium text-sm"
-            >
-              Contacto
-            </Link>
-          </nav>
+          {!isInRegistrationFlow && (
+            <nav className="hidden lg:flex items-center space-x-8">
+              <Link 
+                href="/#features" 
+                className="text-gray2 hover:text-blue8 transition-colors font-medium text-sm"
+              >
+                Características
+              </Link>
+              <Link 
+                href="/#plans" 
+                className="text-gray2 hover:text-blue8 transition-colors font-medium text-sm"
+              >
+                Planes
+              </Link>
+              <Link 
+                href="/#pricing" 
+                className="text-gray2 hover:text-blue8 transition-colors font-medium text-sm"
+              >
+                Precios
+              </Link>
+              <Link 
+                href="/#contact" 
+                className="text-gray2 hover:text-blue8 transition-colors font-medium text-sm"
+              >
+                Contacto
+              </Link>
+            </nav>
+          )}
 
           {/* Desktop Auth Buttons */}
-          {!isVerifyEmailPage && (
+          {!isInRegistrationFlow && (
             <div className="hidden md:flex items-center space-x-4">
               {!isRegisterPage && (
                 <Link href="/register">
@@ -85,23 +106,25 @@ export default function Header() {
           )}
 
           {/* Mobile menu button */}
-          <div className="md:hidden">
-            <Button
-              variant="ghost"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-md"
-            >
-              {mobileMenuOpen ? (
-                <X className="h-6 w-6 text-gray2" />
-              ) : (
-                <Menu className="h-6 w-6 text-gray2" />
-              )}
-            </Button>
-          </div>
+          {!isInRegistrationFlow && (
+            <div className="md:hidden">
+              <Button
+                variant="ghost"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="p-2 rounded-md"
+              >
+                {mobileMenuOpen ? (
+                  <X className="h-6 w-6 text-gray2" />
+                ) : (
+                  <Menu className="h-6 w-6 text-gray2" />
+                )}
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Mobile Navigation Menu */}
-        {mobileMenuOpen && (
+        {!isInRegistrationFlow && mobileMenuOpen && (
           <div className="md:hidden border-t border-blue13 bg-white/95 backdrop-blur-sm">
             <div className="px-4 py-6 space-y-4">
               {/* Mobile Navigation Links */}

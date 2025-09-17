@@ -21,7 +21,7 @@ export default function SubscriptionPanel({ className = '' }: SubscriptionPanelP
     if (user) {
       loadSubscriptionData();
     }
-  }, [user]);
+  }, [user?.id]);
 
   const loadSubscriptionData = async () => {
     try {

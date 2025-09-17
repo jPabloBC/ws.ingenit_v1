@@ -1,11 +1,7 @@
 'use client';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/services/supabase/client';
 import { useState, useEffect } from 'react';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 // Removido: import no usado
 import Button from '@/components/ui/Button';
 

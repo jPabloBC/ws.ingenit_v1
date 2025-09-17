@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import { Check, CheckCircle, Database, RefreshCw, User } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/services/supabase/client';
+import { supabaseAdmin } from '@/services/supabase/admin';
 import Layout from '@/components/layout/Layout';
 
 interface UserData {
@@ -15,10 +16,6 @@ interface UserData {
   schema: string;
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export default function CheckDataPage() {
   const [loading, setLoading] = useState(false);
@@ -30,13 +27,14 @@ export default function CheckDataPage() {
     if (user) {
       checkDataLocation();
     }
-  }, [user]);
+  }, [user?.id]);
 
   const checkDataLocation = async () => {
     setLoading(true);
     try {
       // Verificar en auth.users (siempre existe)
-      const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+  // Usar supabaseAdmin para operaciones administrativas
+  const { data: authUsers, error: authError } = await supabaseAdmin.auth.admin.listUsers();
       
       if (authError) {
         toast.error('Error cargando usuarios de auth: ' + authError.message);
@@ -63,19 +61,12 @@ export default function CheckDataPage() {
 
       for (const schema of schemasToCheck) {
         try {
-          // Crear cliente con schema específico
-          const { createClient } = await import('@supabase/supabase-js');
-          const schemaClient = createClient(
-            'https://juupotamdjqzpxuqdtco.supabase.co',
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp1dXBvdGFtZGpxenB4dXFkdGNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3MDIyMTgsImV4cCI6MjA2NTI3ODIxOH0.8aXgTBg4vhs0DmTKPg9WGTvQ9hHBd_uCGHgt89ZfM_E',
-            {
-              db: { schema }
-            }
-          );
-
-          // Verificar si existe la tabla ws_users en este schema
-          const { data: tableData, error: tableError } = await schemaClient
-            .from('ws_users')
+          // Reusar supabaseAdmin variando el schema dinámicamente vía rpc introspection (simplificado):
+          // Supabase JS no permite cambiar schema runtime en el cliente ya creado excepto usando .from('schema.table')
+          // Así que accedemos con formato schema.table
+          const tableName = `${schema}.ws_users`;
+          const { data: tableData, error: tableError } = await supabaseAdmin
+            .from(tableName as any)
             .select('*')
             .limit(1);
 
@@ -83,8 +74,8 @@ export default function CheckDataPage() {
             foundSchemas.push(schema);
             
             // Obtener usuarios de este schema
-            const { data: profileUsers, error: profileError } = await schemaClient
-              .from('ws_users')
+            const { data: profileUsers, error: profileError } = await supabaseAdmin
+              .from(tableName as any)
               .select('*');
 
             if (!profileError && profileUsers) {

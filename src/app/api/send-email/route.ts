@@ -4,34 +4,16 @@ import { createVerificationEmail, createWelcomeEmail, generateVerificationUrl } 
 
 export async function POST(request: NextRequest) {
   try {
-    const { to, subject, type, token, name, html, text } = await request.json();
+    const emailData = await request.json();
+    console.log('📧 Recibiendo solicitud de email:', { to: emailData.to, subject: emailData.subject });
 
-    // Generar contenido del correo según el tipo
-    let emailContent;
-    
-    if (type === 'verification') {
-      const verificationUrl = generateVerificationUrl(token, to);
-      emailContent = createVerificationEmail({
-        email: to,
-        name: name || 'Usuario',
-        verificationUrl: verificationUrl
-      });
-    } else if (type === 'welcome') {
-      const dashboardUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/dashboard`;
-      emailContent = createWelcomeEmail({
-        email: to,
-        name: name || 'Usuario',
-        dashboardUrl: dashboardUrl
-      });
-    } else {
-      // Usar HTML personalizado si se proporciona
-      emailContent = {
-        to: to,
-        subject: subject,
-        html: html,
-        text: text
-      };
-    }
+    // Usar directamente los datos del email
+    const emailContent = {
+      to: emailData.to,
+      subject: emailData.subject,
+      html: emailData.html,
+      text: emailData.text
+    };
 
     // Configurar Nodemailer con Titan SMTP
     const transporter = nodemailer.createTransport({
@@ -54,7 +36,9 @@ export async function POST(request: NextRequest) {
     };
 
     // Enviar correo
+    console.log('📤 Enviando email a:', emailContent.to);
     const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Email enviado exitosamente:', info.messageId);
 
     return NextResponse.json({ 
       success: true, 
@@ -62,7 +46,7 @@ export async function POST(request: NextRequest) {
       message: 'Correo enviado exitosamente desde gerencia@ingenit.cl'
     });
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('❌ Error sending email:', error);
     return NextResponse.json({ 
       success: false, 
       error: (error as Error).message 

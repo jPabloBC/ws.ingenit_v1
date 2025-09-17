@@ -97,11 +97,10 @@ function mapToCreateProduct(off: OpenFoodFactsProduct, categoryId: string): Crea
   return product;
 }
 
-export async function importChileProducts(userId: string, limit: number = 20, storeType?: string): Promise<{ imported: number; skipped: number; errors: number; }> {
+export async function importChileProducts(userId: string, businessId: string, limit: number = 20, storeType?: string): Promise<{ imported: number; skipped: number; errors: number; }> {
   const products = await fetchChileProducts(Math.min(limit, 100));
   if (!products.length) return { imported: 0, skipped: 0, errors: 0 };
 
-  // Determinar categoría destino
   const firstCategoryName = pickCategoryName(products[0]?.categories);
   const category = await ensureCategory(firstCategoryName, storeType);
 
@@ -112,35 +111,22 @@ export async function importChileProducts(userId: string, limit: number = 20, st
   for (const off of products) {
     if (imported >= limit) break;
 
-    // Respetar límites de suscripción
     const canAdd = await usageService.canAddProduct(userId);
-    if (!canAdd) {
-      skipped += 1;
-      continue;
-    }
+    if (!canAdd) { skipped += 1; continue; }
 
     const mapped = mapToCreateProduct(off, category.id);
-    if (!mapped) {
-      skipped += 1;
-      continue;
-    }
+    if (!mapped) { skipped += 1; continue; }
 
     try {
-      const result = await createProduct(mapped, userId);
-      if (result.success) imported += 1;
-      else {
-        // si excede límites de stock u otros
-        skipped += 1;
-      }
-    } catch (error) {
-      errors += 1;
-    }
+      const result = await createProduct(mapped, { businessId });
+      if (result.success) imported += 1; else skipped += 1;
+    } catch (_e) { errors += 1; }
   }
 
   return { imported, skipped, errors };
 }
 
-export async function importProductByBarcode(userId: string, barcode: string): Promise<{ success: boolean; productId?: string; productName?: string; reason?: string; }>{
+export async function importProductByBarcode(userId: string, businessId: string, barcode: string): Promise<{ success: boolean; productId?: string; productName?: string; reason?: string; }>{
   // 1) Intentar en OpenFoodFacts (OFF)
   const product = await fetchProductByBarcode(barcode);
   
@@ -201,7 +187,7 @@ export async function importProductByBarcode(userId: string, barcode: string): P
   }
   if (!mapped) return { success: false, reason: 'Producto inválido' };
 
-  const result = await createProduct(mapped, userId);
+  const result = await createProduct(mapped, { businessId });
   if (!result.success) return { success: false, reason: result.error || 'Error al crear producto' };
   return { success: true, productId: result.data?.id, productName: mapped.name };
 }

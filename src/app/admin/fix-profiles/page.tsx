@@ -1,16 +1,12 @@
 'use client';
 import dynamic from 'next/dynamic';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/services/supabase/client';
 import { useState, useEffect } from 'react';
 import { AlertTriangle, Check, CheckCircle, RefreshCw, X, XCircle, User, Plus } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import Layout from '@/components/layout/Layout';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 interface UserProfile {
   id: string;
@@ -32,7 +28,7 @@ function FixProfilesPage() {
     if (user) {
       loadUsers();
     }
-  }, [user]);
+  }, [user?.id]);
 
   const loadUsers = async () => {
     setLoading(true);

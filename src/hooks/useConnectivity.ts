@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 interface ConnectivityState {
   isOnline: boolean;
   isSupabaseReachable: boolean;
@@ -38,7 +38,7 @@ export const useConnectivity = () => {
     };
   }, []);
 
-  const checkSupabaseConnectivity = async () => {
+  const checkSupabaseConnectivity = useCallback(async () => {
     try {
       const response = await fetch('https://juupotamdjqzpxuqdtco.supabase.co/rest/v1/', {
         method: 'HEAD',
@@ -63,7 +63,7 @@ export const useConnectivity = () => {
       }));
       return false;
     }
-  };
+  }, []);
 
   return {
     ...state,

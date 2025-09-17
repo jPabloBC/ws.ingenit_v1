@@ -261,20 +261,80 @@ export const electronicInvoiceService = {
   // Crear boleta electrónica
   async createInvoice(invoiceData: Partial<ElectronicInvoice>, items: Partial<ElectronicInvoiceItem>[]): Promise<{ success: boolean; data?: ElectronicInvoice; error?: string }> {
     try {
+      const DEFAULT_APP_ID = '550e8400-e29b-41d4-a716-446655440000';
+      const generateUUID = (): string => {
+        try {
+          const g: any = (globalThis as any);
+          if (g?.crypto?.randomUUID) return g.crypto.randomUUID();
+        } catch (_) {}
+        const rnd = (a?: number) => ((a ?? Math.random()) * 16) | 0;
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = rnd();
+          const v = c === 'x' ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      };
       // Generar folio automático
       const folio = await this.generateFolio(invoiceData.user_id!);
-      
-      const invoiceToCreate = {
+      const resolvedAppId = (invoiceData as any).app_id || DEFAULT_APP_ID;
+      const baseInvoice: any = {
         ...invoiceData,
+        app_id: resolvedAppId,
         folio,
         estado_sii: 'pendiente'
       };
 
-      const { data: invoice, error: invoiceError } = await supabase
-        .from('ws_electronic_invoices')
-        .insert(invoiceToCreate)
-        .select()
-        .maybeSingle();
+      // Incluir business_id sólo si viene
+      if ((invoiceData as any).business_id) {
+        baseInvoice.business_id = (invoiceData as any).business_id;
+      }
+
+      let invoice: any = null;
+      let invoiceError: any = null;
+      // Intento 1: insertar con app_id
+      {
+        const res = await supabase
+          .from('ws_electronic_invoices')
+          .insert(baseInvoice)
+          .select()
+          .maybeSingle();
+        invoice = res.data;
+        invoiceError = res.error;
+      }
+
+      // Si la columna app_id no existe, reintentar sin app_id
+      if (invoiceError) {
+        const code0 = invoiceError.code || '';
+        const message0 = invoiceError.message || '';
+        const noAppId = code0 === '42703' || /app_id|column .* does not exist/i.test(message0);
+        if (noAppId && 'app_id' in baseInvoice) {
+          const { app_id, ...withoutApp } = baseInvoice;
+          const res2 = await supabase
+            .from('ws_electronic_invoices')
+            .insert(withoutApp)
+            .select()
+            .maybeSingle();
+          invoice = res2.data;
+          invoiceError = res2.error;
+        }
+      }
+
+      // Si id es NOT NULL sin default, reintentar con UUID local
+      if (invoiceError) {
+        const code1 = invoiceError.code || '';
+        const message1 = invoiceError.message || '';
+        const nullId = code1 === '23502' && /column "id"|columna "id"|null value in column "id"/i.test(message1);
+        if (nullId) {
+          const payloadWithId = { ...baseInvoice, id: generateUUID() };
+          const res3 = await supabase
+            .from('ws_electronic_invoices')
+            .insert(payloadWithId)
+            .select()
+            .maybeSingle();
+          invoice = res3.data;
+          invoiceError = res3.error;
+        }
+      }
 
       if (invoiceError) {
         console.error('Error creating invoice:', invoiceError);
@@ -390,12 +450,25 @@ export const electronicInvoiceService = {
       const { data, error } = await supabase
         .rpc('generate_electronic_invoice_folio', { user_uuid: userId });
 
-      if (error) {
-        console.error('Error generating folio:', error);
-        return 1; // Fallback
+      if (!error && typeof data === 'number') {
+        return data;
       }
 
-      return data || 1;
+      // Fallback: usar el mayor folio del usuario + 1
+      const { data: last, error: lastErr } = await supabase
+        .from('ws_electronic_invoices')
+        .select('folio')
+        .eq('user_id', userId)
+        .order('folio', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (lastErr) {
+        console.error('Folio fallback query error:', lastErr);
+        return 1;
+      }
+      const next = (last?.folio as number | undefined) ?? 0;
+      return (next || 0) + 1;
     } catch (error) {
       console.error('Error in generateFolio:', error);
       return 1; // Fallback

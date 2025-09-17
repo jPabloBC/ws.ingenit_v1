@@ -6,12 +6,7 @@ import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from '@/services/supabase/client';
 interface AdminStats {
   totalUsers: number;
   totalStores: number;
@@ -38,7 +33,7 @@ export default function AdminDashboard() {
     if (user) {
       loadAdminStats();
     }
-  }, [user]);
+  }, [user?.id]);
 
   // Removido: función no usada
 

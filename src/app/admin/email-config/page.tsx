@@ -1,15 +1,11 @@
 'use client';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/services/supabase/client';
 import { useState, useEffect } from 'react';
 import { Check, CheckCircle, RefreshCw, Send, X, XCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import Layout from '@/components/layout/Layout';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export default function EmailConfigPage() {
   // Removido: variable no usada
@@ -22,7 +18,7 @@ export default function EmailConfigPage() {
     if (user) {
       checkEmailConfiguration();
     }
-  }, [user]);
+  }, [user?.id]);
 
   const checkEmailConfiguration = async () => {
     setLoading(true);

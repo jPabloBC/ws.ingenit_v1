@@ -1,3 +1,5 @@
+import { supabase } from './client';
+
 export interface Customer {
   id: string;
   name: string;
@@ -66,10 +68,23 @@ export const getCustomer = async (id: string): Promise<Customer | null> => {
 export const createCustomer = async (customerData: CreateCustomerData): Promise<Customer | null> => {
   try {
     console.log('Creating customer:', customerData);
-    
+    // Obtener sesión actual para user_id
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('Usuario no autenticado');
+    }
+    // Obtener business_id del contexto (debe pasarse como parte de customerData)
+    if (!(customerData as any).business_id) {
+      throw new Error('Business no seleccionado');
+    }
+    const insertData = {
+      ...customerData,
+      user_id: session.user.id,
+      business_id: (customerData as any).business_id
+    };
     const { data, error } = await supabase
       .from('ws_customers')
-      .insert([customerData])
+      .insert([insertData])
       .select()
       .single();
 

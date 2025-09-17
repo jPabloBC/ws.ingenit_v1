@@ -1,8 +1,9 @@
 'use client';
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/services/supabase/admin';
 import { supabase } from '@/services/supabase/client';
+import { sessionsService } from '@/services/supabase/sessions';
 // TODO: Implement createProfileService
 const createProfileService = async (userData: any) => {
   return { error: null };
@@ -12,10 +13,13 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   userRole: string | null;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  activeSessions: any[];
+  signIn: (email: string, password: string) => Promise<{ error: any; nextRoute?: string | null }>;
   signUp: (email: string, password: string, userData: any) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   createProfile: (userData: any) => Promise<{ error: any }>;
+  closeSession: (sessionId: string) => Promise<boolean>;
+  getActiveSessions: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,55 +37,92 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [activeSessions, setActiveSessions] = useState<any[]>([]);
+
+  // Ref para evitar subscribir múltiples veces (HMR / re-mounts)
+  const subscribedRef = useRef(false);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session }, error }: { data: { session: Session | null }, error: any }) => {
-      if (error) {
-        console.error('Error getting session:', error);
-        // No mostrar error al usuario si es un problema de conectividad
-        if (error.message?.includes('Failed to fetch')) {
-          console.warn('Problema de conectividad detectado');
-        }
-      }
-      
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      // Cargar el rol del usuario si hay sesión y email verificado
-      if (session?.user && session.user.email_confirmed_at) {
-        await loadUserRole(session.user.id);
-      }
-      
-      setLoading(false);
-    }).catch((error: any) => {
-      console.error('Error in getSession:', error);
-      setLoading(false);
-    });
+    if (subscribedRef.current) return; // ya inicializado
+    subscribedRef.current = true;
+    let active = true;
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event: any, session: Session | null) => {
+    const init = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (!active) return;
+        if (error) {
+          console.log('[Auth] getSession error:', error.message);
+          setLoading(false);
+          return;
+        }
+        if (!session) {
+          setSession(null);
+            setUser(null);
+            setUserRole(null);
+            setLoading(false);
+        } else {
+          // Expiration check
+          const now = Date.now() / 1000;
+          if (session.expires_at && session.expires_at < now) {
+            console.log('[Auth] Session expired at mount');
+            await supabase.auth.signOut();
+            if (!active) return;
+            setSession(null);
+            setUser(null);
+            setUserRole(null);
+          } else {
+            setSession(session);
+            setUser(session.user);
+            if (session.user?.email_confirmed_at) {
+              await loadUserRole(session.user.id);
+            }
+          }
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('[Auth] init error', e);
+        if (active) setLoading(false);
+      }
+    };
+
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!active) return;
+      console.log('🔄 Auth state change:', event, !!session?.user);
       setSession(session);
       setUser(session?.user ?? null);
-      
-      // Cargar el rol del usuario cuando cambie la sesión
       if (session?.user) {
-        // Solo cargar rol si el email está verificado
-        if (session.user.email_confirmed_at) {
-          await loadUserRole(session.user.id);
-        } else {
-          setUserRole(null);
+        try {
+          const { data: userData } = await supabaseAdmin
+            .from('ws_users')
+            .select('email_verified')
+            .eq('email', session.user.email)
+            .maybeSingle();
+          if (userData?.email_verified || session.user.email_confirmed_at) {
+            await loadUserRole(session.user.id);
+          } else {
+            setUserRole(null);
+          }
+        } catch (err) {
+          console.error('[Auth] email verification check failed', err);
+          if (session.user.email_confirmed_at) {
+            await loadUserRole(session.user.id);
+          } else {
+            setUserRole(null);
+          }
         }
       } else {
         setUserRole(null);
       }
-      
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const loadUserRole = async (userId: string) => {
@@ -98,41 +139,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // Loading user role
+      console.log('Loading user role for:', userId);
       
       // Primero verificar si el campo role existe
       const { data: profileData, error: profileError } = await supabaseAdmin
         .from('ws_users')
-        .select('*')
+        .select('role')
         .eq('user_id', userId)
         .maybeSingle();
 
       if (profileError) {
         // Si el perfil no existe, solo establecer rol por defecto
         if (profileError.code === 'PGRST116' || profileError.message?.includes('No rows found')) {
-          // Perfil no encontrado - esto es normal para usuarios recién registrados
-          // El perfil se creará cuando el usuario complete el registro
+          console.log('Profile not found, using default role');
           setUserRole('customer'); // Default role
           return;
         }
-        // Solo mostrar error si no es un error de "no encontrado" para usuarios no autenticados
-        if (profileError.code !== 'PGRST116') {
-          console.error('Error loading profile:', {
-            code: profileError.code,
-            message: profileError.message,
-            details: profileError.details,
-            hint: profileError.hint
-          });
-        }
+        // Solo mostrar error si no es un error de "no encontrado"
+        console.error('Error loading profile:', profileError);
         setUserRole('user'); // Default role
         return;
       }
 
-        // Profile data loaded
-      
       // Si el campo role no existe, usar 'user' por defecto
       if (!profileData || !('role' in profileData)) {
-        // Role field not found, using default: user
+        console.log('Role field not found, using default: user');
         setUserRole('user');
         return;
       }
@@ -141,131 +172,135 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Validar que el rol sea válido
       if (!['user', 'admin', 'dev', 'customer'].includes(role)) {
-        // Invalid role found, using default: user
+        console.log('Invalid role found, using default: user');
         setUserRole('user');
         return;
       }
       
-      // User role set
+      console.log('User role set:', role);
       setUserRole(role);
       
     } catch (error) {
-      // Solo mostrar error si no es un error esperado para usuarios no autenticados
-      if (error && typeof error === 'object' && 'code' in error && (error as any).code !== 'PGRST116') {
-        console.error('Error in loadUserRole:', {
-          code: (error as any).code,
-          message: (error as any).message,
-          details: (error as any).details,
-          hint: (error as any).hint
-        });
-      }
+      console.error('Error in loadUserRole:', error);
       setUserRole('user'); // Default role
     }
   };
 
-  const signIn = async (email: string, password: string) => {
-    // Primero cerrar cualquier sesión existente
-    await supabase.auth.signOut();
-    
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    
-    console.log('🔍 Login attempt result:', { 
-      user: data?.user ? {
-        id: data.user.id,
-        email: data.user.email,
-        email_confirmed_at: data.user.email_confirmed_at,
-        created_at: data.user.created_at
-      } : null,
-      error: error?.message
-    });
-    
-    // Si el login fue exitoso, verificar estado completo del usuario
-    if (data.user) {
+  const signIn = useCallback(async (email: string, password: string) => {
+    try {
+      console.log('🔐 Iniciando signIn para:', email);
+      
+      // NOTA: Removiendo signOut() que se colgaba
+      // await supabase.auth.signOut();
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      console.log('� SignInWithPassword completado, resultado:', !!data?.user, !!error);
+      
+      // Si hay error de autenticación, retornarlo directamente
+      if (error) {
+        console.log('🔐 Error de autenticación:', error.message);
+        return { error };
+      }
+
+      // Si no hay usuario, retornar error
+      if (!data.user) {
+        console.log('🔐 No hay usuario en respuesta');
+        return { error: { message: 'No user data received' } };
+      }
+
+      console.log('🔐 Usuario autenticado, verificando email...');
+      
+      // Si el login fue exitoso, verificar estado del usuario
       try {
-        // Primero verificar si el email está verificado
+        // Normalizar email del usuario (puede ser opcional en el tipo)
+        const rawEmail = data.user.email || email; // fallback al email usado en login
+        if (!rawEmail) {
+          console.log('❌ No se pudo determinar el email del usuario tras login');
+          return { error: { message: 'EMAIL_NOT_AVAILABLE' } };
+        }
+        const normalizedEmail = rawEmail.toLowerCase();
+        // Verificar si el email está verificado usando la tabla de verificaciones
+        console.log('🔐 Consultando ws_email_verifications...');
         const { data: verification, error: verificationError } = await supabase
           .from('ws_email_verifications')
           .select('verified')
-          .eq('user_id', data.user.id)
-          .eq('verified', true)
-          .single();
+          .eq('email', normalizedEmail)
+          .maybeSingle();
+        console.log('🔐 Resultado ws_email_verifications:', { verification: verification?.verified, error: verificationError?.message });
 
-        // Si no está verificado, redirigir al registro para verificar
-        if (verificationError && verificationError.code === 'PGRST116') {
-          console.log('📧 Usuario no verificado, redirigiendo a verificación:', data.user.email);
-          return { 
-            error: { 
-              message: 'EMAIL_NOT_VERIFIED',
-              redirectTo: '/register?step=verification'
-            } 
-          };
-        }
-
-        // Si hay otro error de verificación, también redirigir
-        if (verificationError) {
-          console.log('📧 Error verificando email, redirigiendo a verificación:', verificationError);
-          return { 
-            error: { 
-              message: 'EMAIL_NOT_VERIFIED',
-              redirectTo: '/register?step=verification'
-            } 
-          };
+        if (verificationError || !verification?.verified) {
+          console.log('📧 Usuario no verificado:', data.user.email, verificationError?.message);
+          return { error: { message: 'EMAIL_NOT_VERIFIED' }, nextRoute: null };
         }
 
         // Email verificado, verificar si tiene negocio seleccionado
-        console.log('✅ Email verificado, verificando negocio...');
-        
+        console.log('✅ Email verificado, consultando ws_users...');
+
         const { data: userData, error: userError } = await supabase
           .from('ws_users')
           .select('store_types, email_verified')
-          .eq('user_id', data.user.id)
-          .single();
+          .eq('email', normalizedEmail)
+          .maybeSingle();
+        console.log('🔐 Resultado ws_users:', { userData: !!userData, storeTypes: userData?.store_types, error: userError?.message });
 
         if (userError) {
           console.log('❌ Error obteniendo datos del usuario:', userError);
-          return { 
-            error: { 
-              message: 'EMAIL_NOT_VERIFIED',
-              redirectTo: '/register?step=verification'
-            } 
-          };
+          return { error: { message: 'No se encontró el email', redirectTo: '/register?step=verification' }, nextRoute: '/register?step=verification' };
         }
 
-        // Verificar si ya tiene negocio seleccionado
-        if (userData?.store_types && userData.store_types.length > 0) {
-          console.log('✅ Usuario verificado con negocio seleccionado, login exitoso');
-        } else {
-          console.log('📊 Usuario verificado pero sin negocio, redirigiendo a selección');
-          return { 
-            error: { 
-              message: 'EMAIL_VERIFIED_NO_BUSINESS',
-              redirectTo: '/register?step=business'
-            } 
-          };
+        if (!userData) {
+          console.log('❌ Usuario no encontrado en ws_users:', data.user.email);
+          return { error: { message: 'No se encontró el email', redirectTo: '/register?step=verification' }, nextRoute: '/register?step=verification' };
         }
-        
+
+        // Usuario verificado, verificar si tiene negocio configurado
+        if (userData?.store_types && userData.store_types.length > 0) {
+          // Ya tiene negocio configurado, ir al dashboard
+          console.log('✅ Usuario tiene negocio configurado, redirigiendo al dashboard');
+          
+          try {
+            const sessionToken = sessionsService.generateSessionToken();
+            const deviceInfo = sessionsService.getDeviceInfo();
+
+            const sessionResult = await sessionsService.createSession(
+              data.user.id,
+              sessionToken,
+              deviceInfo
+            );
+
+            if (!sessionResult.success) {
+              console.warn('⚠️ Error creando sesión (no bloqueante):', sessionResult.error);
+            }
+
+            console.log('✅ Sesión creada exitosamente:', sessionResult.sessionId);
+          } catch (sessionError) {
+            console.error('❌ Error en sistema de sesiones (no bloqueante):', sessionError);
+          }
+          
+          console.log('✅ Usuario verificado, login permitido:', normalizedEmail);
+          return { error: null, nextRoute: '/dashboard' };
+        } else {
+          // No tiene negocio configurado, ir al selector
+          console.log('✅ Usuario sin negocio configurado, redirigiendo al selector');
+          return { error: null, nextRoute: `/select-business?email=${encodeURIComponent(normalizedEmail)}` };
+        }
+
       } catch (error) {
         console.log('📧 Error verificando estado del usuario:', error);
-        return { 
-          error: { 
-            message: 'EMAIL_NOT_VERIFIED',
-            redirectTo: '/register?step=verification'
-          } 
-        };
+        return { error: { message: 'EMAIL_NOT_VERIFIED' }, nextRoute: null };
       }
-    }
-    
-    if (data.user && data.user.email_confirmed_at) {
-      console.log('✅ Usuario verificado, login permitido:', data.user.email);
-    }
-    
-    return { error };
-  };
 
-  const signUp = async (email: string, password: string, userData: any) => {
+    } catch (error) {
+      console.error('Error in signIn:', error);
+      return { error: { message: 'Error interno del servidor', details: error instanceof Error ? error.message : String(error) }, nextRoute: null };
+    }
+  }, []);
+
+  const signUp = useCallback(async (email: string, password: string, userData: any) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -275,26 +310,95 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       },
     });
     return { data, error };
-  };
+  }, []);
 
-  const createProfile = async (userData: any) => {
+  const createProfile = useCallback(async (userData: any) => {
     return await createProfileService(userData);
-  };
+  }, []);
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-  };
+  const signOut = useCallback(async () => {
+    try {
+      // Cerrar todas las sesiones del usuario en ws_active_sessions
+      if (user) {
+        try {
+          await sessionsService.closeAllUserSessions(user.id);
+          console.log('✅ Todas las sesiones cerradas en ws_active_sessions');
+        } catch (sessionError) {
+          console.error('⚠️ Error cerrando sesiones:', sessionError);
+        }
+      }
+      
+      // Cerrar sesión en Supabase
+      await supabase.auth.signOut();
+      
+      // Limpiar estado local
+      setSession(null);
+      setUser(null);
+      setUserRole(null);
+      setActiveSessions([]);
+      
+      // Limpiar storage manualmente
+      if (typeof window !== 'undefined') {
+        sessionStorage.clear();
+        localStorage.clear();
+      }
+      
+      console.log('Session cleared completely');
+    } catch (error) {
+      console.error('Error during signOut:', error);
+      // Aún así limpiar el estado local
+      setSession(null);
+      setUser(null);
+      setUserRole(null);
+    }
+  }, []);
 
-  const value = {
-    user,
-    session,
-    loading,
-    userRole,
+  // Función para cerrar una sesión específica
+  const closeSession = useCallback(async (sessionId: string): Promise<boolean> => {
+    try {
+      const result = await sessionsService.closeSession(sessionId);
+      if (result) {
+        await getActiveSessions(); // Actualizar la lista
+      }
+      return result;
+    } catch (error) {
+      console.error('Error closing session:', error);
+      return false;
+    }
+  }, []);
+
+  // Función para obtener sesiones activas
+  const getActiveSessions = useCallback(async (): Promise<void> => {
+    if (!user?.id) return;
+    
+    try {
+      const sessions = await sessionsService.getUserActiveSessions(user.id);
+      setActiveSessions(sessions);
+    } catch (error) {
+      console.error('Error getting active sessions:', error);
+    }
+  }, [user?.id]);
+
+  const stableUser = useMemo(() => user, [user?.id]);
+  
+  // Stabilize other values that change frequently
+  const stableLoading = useMemo(() => loading, [loading]);
+  const stableUserRole = useMemo(() => userRole, [userRole]);
+  const stableSession = useMemo(() => session, [session?.access_token]);
+
+  const value = useMemo(() => ({
+    user: stableUser,
+    session: stableSession,
+    loading: stableLoading,
+    userRole: stableUserRole,
+    activeSessions,
     signIn,
     signUp,
     signOut,
     createProfile,
-  };
+    closeSession,
+    getActiveSessions,
+  }), [stableUser, stableSession, stableLoading, stableUserRole, activeSessions, signIn, signUp, signOut, createProfile, closeSession, getActiveSessions]);
 
   return (
     <AuthContext.Provider value={value}>

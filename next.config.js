@@ -6,9 +6,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  experimental: {
-    missingSuspenseWithCSRBailout: false,
-  }
+  // experimental: {} // limpiado: clave inválida removida
 }
 
 module.exports = nextConfig
