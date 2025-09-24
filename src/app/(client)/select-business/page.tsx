@@ -167,8 +167,11 @@ function SelectBusinessContent() {
           // Guardar el primero como seleccionado
           if (creation.businesses && creation.businesses.length > 0) {
             const first = creation.businesses[0];
-            localStorage.setItem('selectedBusinessId', first.id);
-            localStorage.setItem('selectedStoreType', first.store_type);
+            // Verificar que estamos en el cliente antes de usar localStorage
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('selectedBusinessId', first.id);
+              localStorage.setItem('selectedStoreType', first.store_type);
+            }
           }
         }
       } catch (e) {

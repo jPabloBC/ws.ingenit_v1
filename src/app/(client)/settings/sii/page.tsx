@@ -8,6 +8,7 @@ import Layout from '@/components/layout/Layout';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { siiConfigService } from '@/services/supabase/sii';
 import toast from 'react-hot-toast';
 // Removido: import no usado
@@ -24,11 +25,13 @@ interface SiiConfigForm {
   password_certificado: string;
   ambiente_sii: 'certificacion' | 'produccion';
   folio_inicial: number;
+  simulate?: boolean;
 }
 
 export default function SiiSettingsPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { currentBusiness } = useStore();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<SiiConfigForm>({
@@ -43,21 +46,22 @@ export default function SiiSettingsPage() {
     certificado_digital: '',
     password_certificado: '',
     ambiente_sii: 'certificacion',
-    folio_inicial: 1
+    folio_inicial: 1,
+    simulate: false
   });
 
   useEffect(() => {
     if (user) {
       loadConfig();
     }
-  }, [user?.id]);
+  }, [user?.id, currentBusiness?.id]);
 
   const loadConfig = async () => {
     try {
       setLoading(true);
       // Cargar configuración desde la base de datos
       if (user) {
-        const result = await siiConfigService.getConfig(user.id);
+        const result = await siiConfigService.getConfig(user.id, currentBusiness?.id);
         if (result) {
           setConfig({
             rut_empresa: result.rut_empresa || '',
@@ -71,7 +75,8 @@ export default function SiiSettingsPage() {
             certificado_digital: result.certificado_digital || '',
             password_certificado: result.password_certificado || '',
             ambiente_sii: result.ambiente_sii || 'certificacion',
-            folio_inicial: result.folio_inicial || 1
+            folio_inicial: result.folio_inicial || 1,
+            simulate: (result as any).simulate ?? false
           });
         }
       }
@@ -112,7 +117,7 @@ export default function SiiSettingsPage() {
 
 
 
-  const handleInputChange = (field: keyof SiiConfigForm, value: string | number) => {
+  const handleInputChange = (field: keyof SiiConfigForm, value: string | number | boolean) => {
     setConfig(prev => ({
       ...prev,
       [field]: value
@@ -134,7 +139,7 @@ export default function SiiSettingsPage() {
         return;
       }
 
-      const result = await siiConfigService.upsertConfig(config);
+  const result = await siiConfigService.upsertConfig({ ...config, user_id: user.id, business_id: currentBusiness?.id });
       
       if (result) {
         toast.success('Configuración SII guardada exitosamente');
@@ -209,6 +214,9 @@ export default function SiiSettingsPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Configuración SII</h1>
             <p className="text-gray-600">Configura los datos de tu empresa para emisión de boletas electrónicas</p>
+            {currentBusiness?.id && (
+              <p className="text-xs text-gray-500 mt-1">Configuración aplicada al negocio: <span className="font-medium">{currentBusiness.name}</span></p>
+            )}
           </div>
         </div>
 
@@ -451,6 +459,29 @@ export default function SiiSettingsPage() {
                         </p>
                       </div>
                     </div>
+                  </div>
+                </CardContent>
+              </Card>
+              {/* Simulación por negocio */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <AlertCircle className="h-5 w-5 mr-2" />
+                    Modo de Simulación
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Simular envíos para este negocio</p>
+                      <p className="text-xs text-gray-600">Ignora el ambiente real y fuerza respuestas simuladas para pruebas.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={!!config.simulate}
+                      onChange={(e) => handleInputChange('simulate', e.target.checked)}
+                      className="h-5 w-5"
+                    />
                   </div>
                 </CardContent>
               </Card>

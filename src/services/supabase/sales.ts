@@ -207,7 +207,7 @@ export const createSale = async (saleData: CreateSaleData): Promise<{ success: b
         product_name: item.product_name || '',
         sale_id: data.id,
         app_id: resolvedAppId,
-        created_at: new Date().toISOString(),
+        created_at: new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago' })).toISOString(),
         ...(includeBusinessId && saleData.business_id ? { business_id: saleData.business_id } : {})
       }));
 

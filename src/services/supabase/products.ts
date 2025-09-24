@@ -68,121 +68,92 @@ export interface CreateProductData {
 export interface UpdateProductData {
   name?: string;
   description?: string;
-  barcode?: string | null;
-  brand?: string | null;
+  barcode?: string;
+  brand?: string;
+  sku?: string;
   price?: number;
   cost?: number;
   stock?: number;
   min_stock?: number;
   category_id?: string;
-  supplier_id?: string;
-  image_url?: string;
-  general_name?: string | null;
-  quantity?: string | null;
-  packaging?: string | null;
-  labels?: string[] | null;
-  categories_list?: string[] | null;
-  countries_sold?: string[] | null;
-  origin_ingredients?: string | null;
-  manufacturing_places?: string | null;
-  traceability_code?: string | null;
-  official_url?: string | null;
-  off_metadata?: any | null;
+  supplier_id?: string | null;
+  image_url?: string | null;
 }
 
 export const getProducts = async (businessId?: string): Promise<Product[]> => {
-  try {
-    console.log('🔄 Fetching products...');
-
-    if (!businessId) {
-      console.warn('⚠️ getProducts llamado sin businessId. Devolviendo lista vacía para forzar selección de negocio.');
-      return [];
-    }
-    
-    // Verificar sesión primero
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) {
-      console.error('❌ Session error:', sessionError);
-      return [];
-    }
-    
-    if (!session) {
-      console.log('⚠️  No active session, returning empty products');
-      return [];
-    }
-    
-    console.log('✅ Active session found for user:', session.user.email);
-    
-    // Timeout individual para productos (5 segundos)
-    const timeoutPromise = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Products timeout')), 5000)
-    );
-    
-
-    // Consulta filtrada por business_id para aislamiento multi-negocio, SIN join con ws_categories
-    let queryPromise = supabase
-      .from('ws_products')
-      .select('*') // solo los productos, el join se hace en frontend
-      .eq('user_id', session.user.id);
-
-    // Filtrar por business_id (ya validado arriba)
-    queryPromise = queryPromise.eq('business_id', businessId);
-
-    queryPromise = queryPromise.order('created_at', { ascending: false });
-
-    console.log('📊 Executing query...');
-    const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
-
-    if (error) {
-      console.error('❌ Error fetching products:', error);
-      console.error('Error details:', {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint
-      });
-      
-      // Si no existe la tabla o hay problemas de relación, devolver array vacío
-      if (error.code === 'PGRST116' || 
-          error.message.includes('relation') || 
-          error.message.includes('does not exist') ||
-          error.message.includes('schema cache') ||
-          error.code === 'PGRST200' ||
-          error.message.includes('timeout')) {
-        console.log('⚠️  Table ws_products does not exist or timeout, returning empty array');
-        return [];
-      }
-      
-      // Si es un error de RLS o permisos
-      if (error.code === 'PGRST301' || error.message.includes('RLS') || error.message.includes('policy')) {
-        console.log('⚠️  RLS policy error, user may not have access to products');
-        return [];
-      }
-      
-      // Si la columna business_id todavía no existe (migración pendiente)
-      if (error.message && error.message.toLowerCase().includes('business_id')) {
-        console.warn('⚠️  Column business_id missing. Returning empty products until migration runs.');
-        return [];
-      }
-      throw error;
-    }
-
-    console.log('✅ Products fetched successfully:', data?.length || 0);
-    if (data && data.length > 0) {
-      console.log('📦 Sample product:', {
-        id: data[0].id,
-        name: data[0].name,
-        sku: data[0].sku,
-        user_id: data[0].user_id,
-        business_id: data[0].business_id
-      });
-    }
-    return data || [];
-  } catch (error) {
-    console.error('❌ Error in getProducts:', error);
-    // En caso de cualquier error, devolver array vacío para que la página funcione
+  // Política nueva: SOLO devolvemos [] cuando realmente no hay datos (businessId faltante o consulta vacía).
+  // Cualquier condición anómala lanza error para que la capa superior decida sin borrar el estado previo.
+  if (!businessId) {
     return [];
   }
+
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    throw new Error(`SESSION_ERROR:${sessionError.message}`);
+  }
+  if (!session) {
+    throw new Error('NO_SESSION');
+  }
+
+  const { data, error } = await supabase
+    .from('ws_products')
+    .select('id,name,description,sku,stock,price,cost,min_stock,category_id,supplier_id,image_url,created_at,updated_at,barcode,brand,user_id,store_type,business_id,app_id,general_name,quantity,packaging,labels,categories_list,countries_sold,origin_ingredients,manufacturing_places,traceability_code,official_url,off_metadata')
+    .eq('user_id', session.user.id)
+    .eq('business_id', businessId)
+    .limit(50);
+
+  if (error) {
+    // Clasificar algunos errores conocidos para posible fallback
+    const meta = {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint
+    };
+    // Errores de ausencia de tabla o migraciones: lanzar con prefijo para manejo específico
+    if (
+      error.code === 'PGRST116' ||
+      error.message.includes('relation') ||
+      error.message.includes('does not exist') ||
+      error.message.includes('schema cache') ||
+      error.code === 'PGRST200'
+    ) {
+      throw new Error('STRUCTURE_ERROR:' + JSON.stringify(meta));
+    }
+    if (error.message.includes('timeout')) {
+      throw new Error('TIMEOUT_ERROR:' + JSON.stringify(meta));
+    }
+    if (error.code === 'PGRST301' || error.message.includes('RLS') || error.message.includes('policy')) {
+      throw new Error('RLS_ERROR:' + JSON.stringify(meta));
+    }
+    throw new Error('GENERIC_DB_ERROR:' + JSON.stringify(meta));
+  }
+
+  return (data || []).map((item) => ({
+    ...item,
+    description: item.description ?? '',
+    supplier_id: item.supplier_id ?? null,
+    image_url: item.image_url ?? null,
+    created_at: item.created_at ?? '',
+    updated_at: item.updated_at ?? '',
+    barcode: item.barcode ?? null,
+    brand: item.brand ?? null,
+    user_id: item.user_id ?? null,
+    store_type: item.store_type ?? null,
+    business_id: item.business_id ?? null,
+    app_id: item.app_id ?? null,
+    general_name: item.general_name ?? null,
+    quantity: item.quantity ?? null,
+    packaging: item.packaging ?? null,
+    labels: item.labels ?? null,
+    categories_list: item.categories_list ?? null,
+    countries_sold: item.countries_sold ?? null,
+    origin_ingredients: item.origin_ingredients ?? null,
+    manufacturing_places: item.manufacturing_places ?? null,
+    traceability_code: item.traceability_code ?? null,
+    official_url: item.official_url ?? null,
+    off_metadata: item.off_metadata ?? null
+  }));
 };
 
 // Obtener productos por business_id sin filtrar por user_id
@@ -317,37 +288,27 @@ export const createProduct = async (productData: CreateProductData, options: Cre
   }
 };
 
-export const updateProduct = async (id: string, updates: UpdateProductData, userId: string): Promise<{ success: boolean; data?: Product; error?: string }> => {
+export const updateProduct = async (
+  id: string,
+  updates: UpdateProductData,
+  userId: string,
+  businessId?: string | null
+): Promise<{ success: boolean; data?: Product; error?: string }> => {
   try {
-    // Si se está actualizando el stock, verificar límites
-    if (updates.stock !== undefined) {
-      const userLimits = await usageService.getUserLimits(userId);
-      if (userLimits && userLimits.max_stock_per_product !== null) {
-        if (updates.stock > userLimits.max_stock_per_product) {
-          return { 
-            success: false, 
-            error: `El stock máximo permitido es ${userLimits.max_stock_per_product} unidades. Actualiza tu plan para aumentar el límite.` 
-          };
-        }
-      }
+    const res = await fetch('/api/products/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, updates, userId, businessId })
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || !payload.success) {
+      return { success: false, error: payload?.error || `HTTP ${res.status}` };
     }
-
-    const { data, error } = await supabase
-      .from('ws_products')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error updating product:', error);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true, data };
+    return { success: true, data: payload.data };
   } catch (error) {
     console.error('Error in updateProduct:', error);
-    return { success: false, error: 'Error interno del servidor' };
+    return { success: false, error: (error as any)?.message || 'Error interno del servidor' };
   }
 };
 

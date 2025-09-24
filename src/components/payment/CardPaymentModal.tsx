@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { 
   electronicInvoiceService, 
   siiConfigService,
@@ -53,6 +54,7 @@ export default function CardPaymentModal({
   onPaymentSuccess
 }: CardPaymentModalProps) {
   const { user } = useAuth();
+  const { currentBusiness } = useStore();
   const [step, setStep] = useState<'payment' | 'processing' | 'success' | 'error'>('payment');
   const [loading, setLoading] = useState(false);
   const [createdInvoice, setCreatedInvoice] = useState<ElectronicInvoice | null>(null);
@@ -79,8 +81,10 @@ export default function CardPaymentModal({
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',
-      currency: 'CLP'
-    }).format(amount);
+      currency: 'CLP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(Math.round(amount));
   };
 
 
@@ -136,6 +140,7 @@ export default function CardPaymentModal({
       // Crear boleta electrónica (sin datos del cliente - boleta anónima)
       const invoiceData = {
         user_id: user.id,
+        business_id: currentBusiness?.id,
         sale_id: '', // Se generará automáticamente
         tipo_documento: '39', // Boleta electrónica
         fecha_emision: new Date().toISOString(),
@@ -146,9 +151,9 @@ export default function CardPaymentModal({
         direccion_cliente: '',
         comuna_cliente: '',
         ciudad_cliente: '',
-        subtotal: subtotal,
-        iva: iva,
-        total: total,
+        subtotal: Math.round(subtotal),
+        iva: Math.round(iva),
+        total: Math.round(total),
         forma_pago: 'tarjeta',
         medio_pago: 'crédito'
       };
@@ -157,11 +162,11 @@ export default function CardPaymentModal({
         product_id: item.product.id,
         nombre_producto: item.product.name,
         cantidad: item.quantity,
-        precio_unitario: item.product.price,
+        precio_unitario: Math.round(item.product.price),
         descuento: 0,
-        subtotal: item.total,
-        iva: item.total * 0.19, // 19% IVA
-        total: item.total * 1.19,
+        subtotal: Math.round(item.total),
+        iva: Math.round(item.total * 0.19), // 19% IVA
+        total: Math.round(item.total * 1.19),
         codigo_producto: item.product.sku,
         unidad_medida: 'UN'
       }));
@@ -178,6 +183,8 @@ export default function CardPaymentModal({
       const siiResult = await siiCommunicationService.sendInvoiceToSii(result.data!.id);
 
       if (siiResult.success) {
+        // Actualiza el estado local con trackId y estado SII para mostrarlo en la UI
+        setCreatedInvoice((prev) => prev ? { ...prev, track_id: siiResult.trackId ?? prev.track_id, estado_sii: 'aceptado' } : prev);
         setStep('success');
         onPaymentSuccess(result.data!.id);
       } else {

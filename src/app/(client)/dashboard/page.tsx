@@ -1,221 +1,196 @@
-'use client';
-import dynamic from 'next/dynamic';
-import { useState, useCallback, useEffect } from 'react';
-import { AlertTriangle, Package, ShoppingCart, TrendingUp, Users } from 'lucide-react';
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/AuthContext";
-import QuickStat from "@/components/ui/QuickStat";
-import { getDatabaseStatus } from "@/lib/databaseCheck";
-import { supabase } from '@/services/supabase/client';
-import { getProducts as getBusinessProducts, getProductsByBusiness } from '@/services/supabase/products';
-// import { useOncePerUser } from "@/hooks/useOncePerUser";
-import { useStore } from '@/contexts/StoreContext';
+"use client";
 
-function Dashboard() {
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
+import { usePersistentState } from '@/hooks/usePersistentState';
+import { Package, TrendingUp, Users, AlertTriangle, DollarSign } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { supabase } from '@/services/supabase/client';
+
+interface QuickStatProps {
+  title: string;
+  value: string;
+  icon: React.ComponentType<any>;
+  color: string;
+}
+
+function QuickStat({ title, value, icon: Icon, color }: QuickStatProps) {
+  return (
+    <div className={`${color} p-4 rounded-lg`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm opacity-90">{title}</p>
+          <p className="text-2xl font-bold">{value}</p>
+        </div>
+        <Icon className="h-8 w-8 opacity-80" />
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
   const { user, loading } = useAuth();
   const { loading: storeLoading, currentBusiness } = useStore();
-  const [storeType, setStoreType] = useState<string>('restaurant');
-  const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState({ products: 0, salesToday: 0, customers: 0, ordersToday: 0, inventoryValue: 0 });
-  const [recentSales, setRecentSales] = useState<Array<{ id: string; title: string; subtitle: string; amount: number }>>([]);
-  const [stockAlerts, setStockAlerts] = useState<Array<{ id: string; name: string; stock: number }>>([]);
-  const [recentProducts, setRecentProducts] = useState<Array<{ id: string; name: string; sku: string; stock: number }>>([]);
-  const [userTotals, setUserTotals] = useState<{ products: number; customers: number; sales: number } | null>(null);
-  // Cache de soporte de columnas para evitar 400 repetidos
-  const [supportsBusinessInSales, setSupportsBusinessInSales] = useState<boolean | null>(null);
-  const [supportsBusinessInCustomers, setSupportsBusinessInCustomers] = useState<boolean | null>(null);
+  const pathname = usePathname();
+  
+  // Estados persistentes para datos del dashboard - SOLO DATOS REALES
+  const { state: stats, setState: setStats } = usePersistentState({
+    key: `dashboard-stats-${currentBusiness?.id}`,
+    defaultValue: { products: 0, salesToday: 0, customers: 0, ordersToday: 0, inventoryValue: 0 }
+  });
+  
+  const { state: recentSales, setState: setRecentSales } = usePersistentState({
+    key: `dashboard-recent-sales-${currentBusiness?.id}`,
+    defaultValue: []
+  });
+  
+  const { state: stockAlerts, setState: setStockAlerts } = usePersistentState({
+    key: `dashboard-stock-alerts-${currentBusiness?.id}`,
+    defaultValue: []
+  });
+  
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  const router = useRouter();
-
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-CL', {
-      style: 'currency',
-      currency: 'CLP'
-    }).format(amount);
-  };
-
-  // Función de carga de datos por negocio
+  // Función para cargar datos reales de Supabase con timeout agresivo
   const loadDashboardData = useCallback(async () => {
-  // logs de diagnóstico eliminados
+    // Protección contra múltiples llamadas simultáneas
+    if (isLoading) {
+      console.log('[Dash] ⏳ Ya hay una carga en progreso, saltando...');
+      return;
+    }
+    
+    // console.log('[Dash] 🔍 Cargando datos reales de Supabase...');
+    setIsLoading(true);
+    
+    if (!currentBusiness?.id || !user?.id) {
+      // console.log('[Dash] ⚠️ Datos faltantes, usando datos por defecto');
+      setIsLoading(false);
+      return;
+    }
     
     try {
-      // Verificar estado de la base de datos
-      const status = await getDatabaseStatus();
-      if (status.status === 'error') {
-  // console.warn('⚠️ Problema con la base de datos:', status.message);
-      }
-
-      // Cargar datos por negocio (user_id + business_id)
-      if (!currentBusiness?.id) {
-  // console.warn('⚠️ currentBusiness no disponible; se omite carga de métricas');
-        return;
-      }
-
-      // Productos: reutilizar el service de Inventario para asegurar mismas políticas/filtros
-      let productList = await getBusinessProducts(currentBusiness.id);
-      if (productList.length === 0) {
-        // Fallback: productos por business (sin user_id) por si hay filas históricas
-        productList = await getProductsByBusiness(currentBusiness.id);
-      }
-      const productsCount = productList.length;
-      const inventoryValue = productList.reduce((sum: number, p: any) => sum + (Number(p.price || 0) * Number(p.stock || 0)), 0);
+      // Consulta a productos con timeout de 30 segundos
+      // console.log('[Dash] 📦 Consultando productos...');
+      const productQuery = supabase
+        .from('ws_products')
+        .select('*')
+        .eq('business_id', currentBusiness.id);
       
-      // Ventas de hoy
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      // Ventas de hoy por business con cache del soporte de columna
-      let salesTodayRows: any[] = [];
-      let salesTodayErr: any = null;
-      if (supportsBusinessInSales !== false) {
-        const { data, error } = await supabase
-          .from('ws_sales')
-          .select('total_amount, created_at')
-          .eq('business_id', currentBusiness.id)
-          .gte('created_at', today.toISOString());
-        if (error && /business_id/.test(error.message)) {
-          setSupportsBusinessInSales(false);
-        } else if (!error) {
-          setSupportsBusinessInSales(true);
-        }
-        if (error && supportsBusinessInSales !== true) {
-          const { data: fbData, error: fbErr } = await supabase
-            .from('ws_sales')
-            .select('total_amount, created_at')
-            .eq('user_id', user!.id)
-            .gte('created_at', today.toISOString());
-          salesTodayRows = fbData || [];
-          salesTodayErr = fbErr;
-        } else {
-          salesTodayRows = data || [];
-          salesTodayErr = error;
-        }
-      } else {
-        const { data: fbData, error: fbErr } = await supabase
-          .from('ws_sales')
-          .select('total_amount, created_at')
-          .eq('user_id', user!.id)
-          .gte('created_at', today.toISOString());
-        salesTodayRows = fbData || [];
-        salesTodayErr = fbErr;
-      }
-  // if (salesTodayErr && process.env.NODE_ENV !== 'production') console.warn('Ventas hoy error:', salesTodayErr.message);
-      const salesToday = (salesTodayRows || []).reduce((sum: number, r:any) => sum + (r.total_amount||0), 0);
-      const ordersToday = (salesTodayRows || []).length;
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout productos')), 30000)
+      );
       
-      // Clientes por business con cache del soporte de columna
-      let customers = 0;
-      if (supportsBusinessInCustomers !== false) {
-        const { count, error } = await supabase
-          .from('ws_customers')
-          .select('id', { count: 'exact' })
-          .eq('business_id', currentBusiness.id)
-          .limit(1);
-        if (error && /business_id/.test(error.message)) {
-          setSupportsBusinessInCustomers(false);
-        } else if (!error) {
-          setSupportsBusinessInCustomers(true);
-        }
-        if (error && supportsBusinessInCustomers !== true) {
-          const { count: fbCount, error: fbErr } = await supabase
-            .from('ws_customers')
-            .select('id', { count: 'exact' })
-            .eq('user_id', user!.id)
-            .limit(1);
-          customers = fbCount || 0;
-          // if (fbErr && process.env.NODE_ENV !== 'production') console.warn('Clientes count (fallback user) error:', fbErr.message);
-        } else {
-          customers = count || 0;
-          // if (error && process.env.NODE_ENV !== 'production') console.warn('Clientes count error:', error.message);
-        }
+      const { data: productData, error: productError } = await Promise.race([
+        productQuery,
+        timeoutPromise
+      ]) as any;
+      
+      let productList: any[] = [];
+      if (productError) {
+        console.error('[Dash] ❌ Error productos:', productError);
+        // NO DATOS HARDCODEADOS - usar array vacío si falla
+        productList = [];
       } else {
-        const { count: fbCount, error: fbErr } = await supabase
-          .from('ws_customers')
-          .select('id', { count: 'exact' })
-          .eq('user_id', user!.id)
-          .limit(1);
-        customers = fbCount || 0;
-  // if (fbErr && process.env.NODE_ENV !== 'production') console.warn('Clientes count (fallback user) error:', fbErr.message);
+        productList = productData || [];
+        // console.log('[Dash] ✅ Productos obtenidos:', productList.length);
       }
       
-      setStats({ products: productsCount || 0, salesToday, customers, ordersToday, inventoryValue });
-
-      // Si todo está en cero a nivel negocio, intentamos un vistazo a nivel de usuario para orientar
-      if ((productsCount || 0) === 0 && salesToday === 0 && (customers || 0) === 0) {
-        try {
-          const [{ count: up }, { count: uc }, { data: us } ] = await Promise.all([
-            supabase.from('ws_products').select('id', { count: 'exact' }).eq('user_id', user!.id).limit(1),
-            supabase.from('ws_customers').select('id', { count: 'exact' }).eq('user_id', user!.id).limit(1),
-            supabase.from('ws_sales').select('id', { count: 'exact' }).eq('user_id', user!.id).limit(1),
-          ]);
-          setUserTotals({ products: up || 0, customers: uc || 0, sales: (us as any) || 0 });
-        } catch (udErr) {
-          // console.warn('Diagnóstico por usuario falló:', udErr);
-        }
-      } else {
-        setUserTotals(null);
-      }
-      // Productos recientes: tomar del listado ya obtenido
-      setRecentProducts(productList.slice(0, 5).map((p: any) => ({ id: p.id, name: p.name, sku: p.sku, stock: p.stock })));
-
-      // Ventas recientes por business con cache del soporte de columna
-      let recent: any[] = [];
-      if (supportsBusinessInSales !== false) {
-        const { data, error } = await supabase
+  const productsCount = productList.length;
+  const inventoryValue = productList.reduce((sum: number, p: any) => sum + (Number(p.price || 0) * Number(p.stock || 0)), 0);
+      
+      // Calcular alertas de stock reales
+      const allStockAlerts = productList
+        .filter(p => Number(p.stock || 0) <= Number(p.min_stock || 0))
+        .map(p => ({
+          id: p.id,
+          name: p.name,
+          stock: Number(p.stock || 0),
+          min_stock: Number(p.min_stock || 0),
+          price: Number(p.price || 0)
+        }));
+      
+      // console.log('[Dash] ✅ Datos calculados:', { 
+      //   productsCount, 
+      //   inventoryValue, 
+      //   stockAlertsCount: allStockAlerts.length 
+      // });
+      // console.log('[Dash] ✅ Alertas de stock:', allStockAlerts);
+      
+      // Actualizar estados con datos reales - SIN HARDCODEADOS
+      setStats({
+        products: productsCount,
+        inventoryValue: inventoryValue,
+        salesToday: 0, // TODO: Implementar consulta real de ventas
+        customers: 0, // TODO: Implementar consulta real de clientes
+        ordersToday: 0 // TODO: Implementar consulta real de órdenes
+      });
+      
+      setStockAlerts(allStockAlerts);
+      
+      // Consultar ventas recientes reales
+      try {
+        // console.log('[Dash] 💰 Consultando ventas recientes...');
+        const salesQuery = supabase
           .from('ws_sales')
-          .select('id,total_amount,created_at')
+          .select('id, total_amount, created_at, sale_number')
           .eq('business_id', currentBusiness.id)
           .order('created_at', { ascending: false })
-          .limit(3);
-        if (error && /business_id/.test(error.message)) {
-          setSupportsBusinessInSales(false);
-        } else if (!error) {
-          setSupportsBusinessInSales(true);
-        }
-        if (error && supportsBusinessInSales !== true) {
-          const { data: fbData, error: fbErr } = await supabase
-            .from('ws_sales')
-            .select('id,total_amount,created_at')
-            .eq('user_id', user!.id)
-            .order('created_at', { ascending: false })
-            .limit(3);
-          // if (fbErr && process.env.NODE_ENV !== 'production') console.warn('Ventas recientes (fallback user) error:', fbErr.message);
-          recent = fbData || [];
+          .limit(5);
+        
+        const salesTimeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout ventas')), 5000)
+        );
+        
+        const { data: salesData, error: salesError } = await Promise.race([
+          salesQuery,
+          salesTimeoutPromise
+        ]) as any;
+        
+        if (salesError) {
+          console.error('[Dash] ❌ Error ventas:', salesError);
+          setRecentSales([]);
         } else {
-          // if (error && process.env.NODE_ENV !== 'production') console.warn('Ventas recientes error:', error.message);
-          recent = data || [];
+          const recentSalesData = salesData || [];
+          // console.log('[Dash] ✅ Ventas obtenidas:', recentSalesData.length);
+          // console.log('[Dash] 📊 Datos de ventas:', recentSalesData);
+          setRecentSales(recentSalesData);
         }
-      } else {
-        const { data: fbData, error: fbErr } = await supabase
-          .from('ws_sales')
-          .select('id,total_amount,created_at')
-          .eq('user_id', user!.id)
-          .order('created_at', { ascending: false })
-          .limit(3);
-  // if (fbErr && process.env.NODE_ENV !== 'production') console.warn('Ventas recientes (fallback user) error:', fbErr.message);
-        recent = fbData || [];
+      } catch (e) {
+        console.error('[Dash] Error consultando ventas:', e);
+        setRecentSales([]);
       }
-      setRecentSales((recent || []).map((r:any) => ({
-        id: r.id,
-        title: 'Venta',
-        subtitle: new Date(r.created_at).toLocaleString(),
-        amount: r.total_amount || 0,
-      })));
-
-      // Alertas de stock: calcular desde el listado
-      const lowStockProducts = productList.filter((p: any) => (p.stock || 0) <= (p.min_stock || 0)).slice(0, 5);
-      setStockAlerts(lowStockProducts.map((p:any) => ({ id: p.id, name: p.name, stock: p.stock })));
       
+      // console.log('[Dash] ✅ Dashboard actualizado con datos reales');
     } catch (e) {
-  // console.warn('No se pudieron cargar métricas reales:', e);
+      console.error('[Dash] Error:', e);
+      // En caso de error, mostrar 0 - NO DATOS HARDCODEADOS
+      setStats({
+        products: 0,
+        inventoryValue: 0,
+        salesToday: 0,
+        customers: 0,
+        ordersToday: 0
+      });
+      setStockAlerts([]);
+      // No resetear ventas recientes en caso de error general
+    } finally {
+      setIsLoading(false);
     }
-  }, [user?.id, currentBusiness?.id]);
+  }, [currentBusiness?.id, user?.id, setStats, setRecentSales, setStockAlerts, isLoading]);
 
-  // Ejecutar cada vez que usuario o negocio cambian y estén listos
+  // Cargar datos automáticamente al montar el componente - UNA SOLA VEZ
   useEffect(() => {
-    if (!user?.id || !currentBusiness?.id) return;
-    loadDashboardData();
-  }, [user?.id, currentBusiness?.id, loadDashboardData]);
+    if (user?.id && currentBusiness?.id) {
+      // console.log('[Dash] 🚀 Carga inicial automática');
+      loadDashboardData();
+    }
+  }, [user?.id, currentBusiness?.id]); // Removido loadDashboardData de dependencias
+
+  // SIN POLLING AUTOMÁTICO - Solo actualizar cuando sea necesario
+
+  // SIN LISTENERS DE VISIBILIDAD - Solo carga inicial y manual
 
   const handleManualRefresh = async () => {
     try {
@@ -227,26 +202,13 @@ function Dashboard() {
   };
 
   // SecurityGuard ya verificó la autenticación
-
   if (loading || storeLoading) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin h-10 w-10 border-b-2 border-blue-600 rounded-full mx-auto mb-4" />
-          <p className="text-gray-600">Preparando tu panel...</p>
-        </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
   }
-
-  // Mostrar mensaje si no hay datos reales
-  const noData =
-    stats.products === 0 &&
-    stats.salesToday === 0 &&
-    stats.customers === 0 &&
-    stats.ordersToday === 0 &&
-    recentSales.length === 0 &&
-    stockAlerts.length === 0;
 
   return (
     <div className="px-4 md:px-6">
@@ -257,154 +219,121 @@ function Dashboard() {
         </div>
         <button
           onClick={handleManualRefresh}
-          className={`px-3 py-2 text-sm rounded-md border ${refreshing ? 'bg-gray-100 text-gray-500' : 'bg-white hover:bg-gray-50'} `}
+          className={`px-4 py-2 text-sm rounded-md border ${refreshing ? 'bg-gray-100 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'} `}
           disabled={refreshing}
           aria-busy={refreshing}
         >
-          {refreshing ? 'Actualizando…' : 'Actualizar datos'}
+          {refreshing ? 'Actualizando…' : '🔄 Actualizar Dashboard'}
         </button>
       </div>
 
+      {/* Quick Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-6 md:mb-8">
+        <QuickStat 
+          title="Productos" 
+          value={String((stats as any).products)} 
+          icon={Package} 
+          color="bg-blue-600 text-white" 
+        />
+        <QuickStat 
+          title="Valor Inventario" 
+          value={`$${(stats as any).inventoryValue?.toLocaleString() || '0'}`} 
+          icon={DollarSign} 
+          color="bg-green-600 text-white" 
+        />
+        <QuickStat 
+          title="Ventas Hoy" 
+          value={`$${(stats as any).salesToday?.toLocaleString() || '0'}`} 
+          icon={TrendingUp} 
+          color="bg-purple-600 text-white" 
+        />
+        <QuickStat 
+          title="Clientes" 
+          value={String((stats as any).customers)} 
+          icon={Users} 
+          color="bg-orange-600 text-white" 
+        />
+      </div>
 
-
-      {noData && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded">
-          <div className="flex items-center">
-            <AlertTriangle className="h-6 w-6 text-yellow-500 mr-2" />
-            <div>
-              <p className="font-semibold text-yellow-800">No hay datos para el negocio seleccionado.</p>
-              <p className="text-yellow-700 text-sm">Aún no se han registrado productos, ventas ni clientes para este negocio.</p>
-              {userTotals && (userTotals.products > 0 || userTotals.customers > 0 || userTotals.sales > 0) && (
-                <p className="text-yellow-700 text-sm mt-2">
-                  Nota: Tu usuario tiene registros en otras tiendas o sin negocio asignado (Productos: {userTotals.products}, Clientes: {userTotals.customers}).
-                  Puedes cambiar de tienda con el botón "Cambiar Tienda" o asociar los datos a este negocio desde Inventario.
-                </p>
-              )}
+      {/* Alertas de Stock Bajo */}
+      {(stockAlerts as any[]).length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center">
+              <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+              <h3 className="text-lg font-semibold text-red-800">Alertas de Stock Bajo</h3>
             </div>
+            <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-sm font-medium">
+              {(stockAlerts as any[]).length} producto(s)
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {(stockAlerts as any[]).map((alert) => (
+              <div key={alert.id} className="bg-white p-4 rounded-lg border border-red-200 hover:border-red-300 transition-colors">
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className="font-semibold text-gray-900 text-sm">{alert.name}</h4>
+                  <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">
+                    ID: {alert.id}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 text-sm">Stock actual:</span>
+                    <span className="text-red-600 font-semibold text-sm">{alert.stock} unidades</span>
+              </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 text-sm">Stock mínimo:</span>
+                    <span className="text-gray-800 font-medium text-sm">{alert.min_stock} unidades</span>
+          </div>
+                  {alert.price && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 text-sm">Precio:</span>
+                      <span className="text-green-600 font-medium text-sm">${alert.price.toLocaleString()}</span>
+        </div>
+                  )}
+                </div>
+                <div className="mt-3 pt-2 border-t border-gray-100">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-500">Déficit:</span>
+                    <span className="text-red-600 font-semibold text-sm">
+                      {Math.max(0, alert.min_stock - alert.stock)} unidades
+                    </span>
+        </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-6 md:mb-8">
-        <QuickStat title="Productos" value={String(stats.products)} icon={Package} color="bg-blue-600 text-white" />
-        <QuickStat title="Ventas Hoy" value={formatCurrency(stats.salesToday)} icon={TrendingUp} color="bg-green-500 text-white" />
-        <QuickStat title="Clientes" value={String(stats.customers)} icon={Users} color="bg-purple-500 text-white" />
-        <QuickStat title="Órdenes" value={String(stats.ordersToday)} icon={ShoppingCart} color="bg-orange-500 text-white" />
-        <QuickStat title="Valor Inventario" value={formatCurrency(stats.inventoryValue)} icon={Package} color="bg-indigo-600 text-white" />
-      </div>
-
-      {/* Recent Activity & Alerts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-6">
-        {/* Recent Sales */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6 lg:col-span-2">
-          <h3 className="text-lg font-semibold text-gray-900 mb-3 md:mb-4">
-            Ventas Recientes
-          </h3>
-          <div className="space-y-3 md:space-y-4">
-            {recentSales.length === 0 ? (
-              <p className="text-sm text-gray-500">Aún no hay ventas.</p>
-            ) : recentSales.map(s => (
-              <div key={s.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+      {/* Ventas Recientes */}
+      <div className="bg-white rounded-lg shadow-sm border p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Ventas Recientes</h3>
+        {(recentSales as any[]).length > 0 ? (
+          <div className="space-y-3">
+            {(recentSales as any[]).map((sale) => (
+              <div key={sale.id} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0">
                 <div>
-                  <p className="font-medium text-gray-900">{s.title}</p>
-                  <p className="text-sm text-gray-500">{s.subtitle}</p>
+                  <p className="font-medium text-gray-900">
+                    {sale.sale_number ? `Venta #${sale.sale_number}` : `Venta #${sale.id}`}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {new Date(sale.created_at).toLocaleDateString()}
+                  </p>
                 </div>
-                <span className="text-green-600 font-semibold">{formatCurrency(s.amount)}</span>
+                <span className="font-semibold text-green-600">
+                  ${sale.total_amount.toLocaleString()}
+                </span>
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Low Stock Alerts */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-3 md:mb-4">
-            Alertas de Stock
-          </h3>
-          <div className="space-y-3 md:space-y-4">
-            {stockAlerts.length === 0 ? (
-              <p className="text-sm text-gray-500">Sin alertas de stock.</p>
-            ) : stockAlerts.map(p => (
-              <div key={p.id} className="flex items-center p-3 bg-red-50 border border-red-200 rounded-md">
-                <AlertTriangle className="h-5 w-5 text-red-600 mr-3" />
-                <div>
-                  <p className="font-medium text-red-800">{p.name} - Stock bajo</p>
-                  <p className="text-sm text-red-600">Quedan {p.stock} unidades</p>
-                </div>
-              </div>
-            ))}
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-gray-500">No hay ventas recientes</p>
+            <p className="text-sm text-gray-400 mt-1">Las ventas aparecerán aquí una vez que se realicen</p>
           </div>
-        </div>
-
-        {/* Recent Products */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-3 md:mb-4">
-            Productos Recientes
-          </h3>
-          <div className="space-y-3 md:space-y-4">
-            {recentProducts.length === 0 ? (
-              <p className="text-sm text-gray-500">Aún no hay productos creados.</p>
-            ) : recentProducts.map(p => (
-              <div key={p.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                <div>
-                  <p className="font-medium text-gray-900">{p.name}</p>
-                  <p className="text-sm text-gray-500">SKU: {p.sku || '—'}</p>
-                </div>
-                <span className="text-blue-600 font-semibold">Stock: {p.stock}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Available Modules */}
-      <div className="mt-6 md:mt-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-3 md:mb-4">
-          Módulos Disponibles
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <div className="bg-white p-3 md:p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
-            <div className="flex items-center space-x-2 md:space-x-3">
-              <Package className="h-6 md:h-8 w-6 md:w-8 text-blue-600" />
-              <div>
-                <h4 className="font-medium text-gray-900">Inventario</h4>
-                <p className="text-sm text-gray-500">Gestionar productos</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white p-3 md:p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
-            <div className="flex items-center space-x-2 md:space-x-3">
-              <ShoppingCart className="h-6 md:h-8 w-6 md:w-8 text-green-600" />
-              <div>
-                <h4 className="font-medium text-gray-900">Ventas</h4>
-                <p className="text-sm text-gray-500">Procesar ventas</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white p-3 md:p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
-            <div className="flex items-center space-x-2 md:space-x-3">
-              <Users className="h-6 md:h-8 w-6 md:w-8 text-purple-600" />
-              <div>
-                <h4 className="font-medium text-gray-900">Clientes</h4>
-                <p className="text-sm text-gray-500">Gestionar clientes</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white p-3 md:p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer">
-            <div className="flex items-center space-x-2 md:space-x-3">
-              <TrendingUp className="h-6 md:h-8 w-6 md:w-8 text-orange-600" />
-              <div>
-                <h4 className="font-medium text-gray-900">Reportes</h4>
-                <p className="text-sm text-gray-500">Ver estadísticas</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
-
-export default dynamic(() => Promise.resolve(Dashboard), {
-  ssr: false
-}); 

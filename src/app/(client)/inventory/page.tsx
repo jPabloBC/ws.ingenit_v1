@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Package, AlertTriangle, Filter, Search, Plus, Globe, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
@@ -7,203 +7,48 @@ import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { getProducts, deleteProduct, updateProduct } from '@/services/supabase/products';
+import { getProducts, deleteProduct, updateProduct, Product } from '@/services/supabase/products';
 import { getCategories } from '@/services/supabase/categories';
 import toast from 'react-hot-toast';
 import { importChileProducts, importProductByBarcode } from '@/services/integrations/openFoodFacts';
 import SecurityGuard from '@/components/SecurityGuard';
+import { useProducts } from '@/contexts/ProductsContext';
+import { useCategories } from '@/contexts/CategoriesContext';
+import EditStockModal from '@/components/modals/EditStockModal';
+import { supabase } from '@/services/supabase/client';
+import { useRobustInterval } from '@/hooks/useRobustInterval';
+import { usePageVisibility } from '@/hooks/usePageVisibility';
 
-// Modal simple para editar stock
-function EditStockModal({ open, onClose, product, onSave }: any) {
-  const [form, setForm] = useState({
-    stock: product?.stock || 0,
-    min_stock: product?.min_stock || 0,
-    price: product?.price || 0,
-    cost: product?.cost || 0,
-  });
-
-  // Funciones de formato para el modal
-  const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('es-CL').format(num);
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-CL', {
-      style: 'currency',
-      currency: 'CLP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount);
-  };
-
-  // Función para formatear valores en inputs
-  const formatInputValue = (value: any) => {
-    if (!value || value === '') return '';
-    const num = parseFloat(value);
-    if (isNaN(num)) return '';
-    return formatNumber(num);
-  };
-
-  // Función para extraer número de string formateado
-  const parseFormattedNumber = (value: string) => {
-    if (!value) return '';
-    return value.replace(/\./g, '');
-  };
-
-  useEffect(() => {
-    if (product) {
-      setForm({
-        stock: product.stock || 0,
-        min_stock: product.min_stock || 0,
-        price: product.price || 0,
-        cost: product.cost || 0,
-      });
-    }
-  }, [product]);
-
-  if (!open || !product) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-96 max-w-md">
-        <h3 className="text-lg font-bold mb-2">Editar Stock - {product.name}</h3>
-        <div className="text-sm text-gray-600 mb-4">
-          <p>Stock actual: {formatNumber(product.stock)} | Precio: {formatCurrency(product.price)} | Costo: {formatCurrency(product.cost)}</p>
-        </div>
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          onSave({
-            stock: Number(form.stock),
-            min_stock: Number(form.min_stock),
-            price: Number(form.price),
-            cost: Number(form.cost),
-          });
-        }} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Stock</label>
-            <input 
-              type="text" 
-              value={formatInputValue(form.stock)} 
-              onChange={(e) => {
-                const rawValue = parseFormattedNumber(e.target.value);
-                setForm({...form, stock: rawValue});
-              }}
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" 
-              placeholder="1.000"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Stock Mínimo</label>
-            <input 
-              type="text" 
-              value={formatInputValue(form.min_stock)} 
-              onChange={(e) => {
-                const rawValue = parseFormattedNumber(e.target.value);
-                setForm({...form, min_stock: rawValue});
-              }}
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" 
-              placeholder="100"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Precio</label>
-            <div className="relative">
-              <span className="absolute left-3 top-2 text-gray-500">$</span>
-              <input 
-                type="text" 
-                value={formatInputValue(form.price)} 
-                onChange={(e) => {
-                  const rawValue = parseFormattedNumber(e.target.value);
-                  setForm({...form, price: rawValue});
-                }}
-                className="w-full border rounded pl-8 pr-12 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" 
-                placeholder="1.000"
-              />
-              <span className="absolute right-3 top-2 text-gray-500 text-sm">CLP</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">Formato: {form.price ? formatCurrency(Number(form.price)) : '$0'}</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Costo</label>
-            <div className="relative">
-              <span className="absolute left-3 top-2 text-gray-500">$</span>
-              <input 
-                type="text" 
-                value={formatInputValue(form.cost)} 
-                onChange={(e) => {
-                  const rawValue = parseFormattedNumber(e.target.value);
-                  setForm({...form, cost: rawValue});
-                }}
-                className="w-full border rounded pl-8 pr-12 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" 
-                placeholder="1.000"
-              />
-              <span className="absolute right-3 top-2 text-gray-500 text-sm">CLP</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">Formato: {form.cost ? formatCurrency(Number(form.cost)) : '$0'}</p>
-          </div>
-          <div className="flex justify-end gap-2 mt-6">
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-            >
-              Cancelar
-            </button>
-            <button 
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Guardar
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  sku: string;
-  barcode?: string | null;
-  price: number;
-  cost: number;
-  stock: number;
-  min_stock: number;
-  category_id: string;
-  supplier_id: string | null;
-  image_url: string | null;
-  brand?: string | null;
-  user_id?: string | null;
-  store_type?: string | null;
-  business_id?: string | null;
-  app_id?: string | null;
-  general_name?: string | null;
-  quantity?: string | null;
-  packaging?: string | null;
-  labels?: string[] | null;
-  categories_list?: string[] | null;
-  countries_sold?: string[] | null;
-  origin_ingredients?: string | null;
-  manufacturing_places?: string | null;
-  traceability_code?: string | null;
-  official_url?: string | null;
-  off_metadata?: any | null;
-  created_at: string;
-  updated_at: string;
-  ws_categories?: { name: string };
-  ws_suppliers?: { name: string };
-}
+// Modal movido a componente separado para mejor rendimiento
 
 export default function Inventory() {
   const router = useRouter();
   const { user, userRole } = useAuth();
   const { storeConfig, currentBusiness } = useStore();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  
+  // Usar contexto global de productos
+  const { 
+    products, 
+    loading: productsLoading, 
+    error: productsError,
+    loadProducts,
+    refreshProducts,
+    updateProduct: updateProductInCache,
+    removeProduct: removeProductFromCache
+  } = useProducts();
+  
+  // Usar contexto global de categorías
+  const {
+    categories,
+    loading: categoriesLoading,
+    error: categoriesError,
+    loadCategories
+  } = useCategories();
+  
+  // Hook de visibilidad para recargar datos cuando vuelve al primer plano
+  const { isVisible } = usePageVisibility();
+  
+  const [loading, setLoading] = useState(false); // Cambiado a false inicialmente
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showLowStock, setShowLowStock] = useState(false);
@@ -212,82 +57,199 @@ export default function Inventory() {
   const [loadingData, setLoadingData] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   const [editStockModal, setEditStockModal] = useState<{ open: boolean; product: Product | null }>({ open: false, product: null });
+  const [isSaving, setIsSaving] = useState(false);
 
+  // Función para manejar el guardado del modal
+  const handleModalSave = useCallback(async (form: { stock: number; min_stock: number; price: number; cost: number }) => {
+    // console.log('🔧 handleModalSave called:', { form, product: editStockModal.product, isSaving });
+    
+    if (isSaving) {
+      // console.log('⚠️ Already saving, ignoring request');
+      return;
+    }
+    
+    if (!editStockModal.product) {
+      console.error('❌ No product in modal state');
+      toast.error('Error: No hay producto seleccionado');
+      return;
+    }
+    
+    setIsSaving(true);
+    
+    // Helper: timeout
+    const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> => {
+      return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
+        p.then((v) => { clearTimeout(timer); resolve(v); })
+         .catch((e) => { clearTimeout(timer); reject(e); });
+      });
+    };
+
+    // Guardar valores previos por si hay que revertir
+    const previousProduct = editStockModal.product;
+
+    try {
+      // console.log('🔄 Updating product in cache (optimistic)...');
+      const updatedProduct = {
+        ...editStockModal.product,
+        stock: Number(form.stock),
+        min_stock: Number(form.min_stock),
+        price: Number(form.price),
+        cost: Number(form.cost),
+      };
+      updateProductInCache(updatedProduct);
+
+      // Confirmar en Supabase con reintentos
+      // console.log('🔄 Saving to Supabase with retries...');
+      const trySave = async () => {
+        const res = await withTimeout(
+          updateProduct(
+            previousProduct.id,
+            {
+              stock: Number(form.stock),
+              min_stock: Number(form.min_stock),
+              price: Number(form.price),
+              cost: Number(form.cost),
+            },
+            previousProduct.user_id || '',
+            currentBusiness?.id || null
+          ),
+          10000
+        );
+        return res;
+      };
+
+      let res: any;
+      let attempt = 0;
+      let lastErr: any = null;
+      while (attempt < 3) {
+        try {
+          attempt += 1;
+          res = await trySave();
+          if (res?.success) break;
+          lastErr = res?.error || 'Unknown error';
+        } catch (e) {
+          lastErr = e;
+        }
+        await new Promise(r => setTimeout(r, 500 * attempt));
+      }
+
+      if (res?.success) {
+        // Si el backend devolvió el producto (con updated_at / triggers), actualizar cache con esos datos
+        if (res.data) {
+          updateProductInCache({ ...previousProduct, ...res.data });
+        }
+        if (currentBusiness?.id && user?.id) {
+          try {
+            localStorage.setItem(`inv-last-change-${currentBusiness.id}`, Date.now().toString());
+          } catch {}
+          // BroadcastChannel local inmediato
+          try {
+            const bc = new BroadcastChannel('inv-sync');
+            bc.postMessage({ type: 'inventory_updated', businessId: currentBusiness.id });
+            setTimeout(() => { try { bc.close(); } catch {} }, 500);
+          } catch {}
+          // (Opcional) refresh local para asegurar consistencia si había triggers que cambian otros campos
+          // refreshProducts(currentBusiness.id, user.id); // Deshabilitado para depender de realtime y evitar cargas duplicadas
+          try {
+            const registry: any = (window as any).__invChannels ||= {};
+            // Canal dedicado
+            const invChanName = `inv-broadcast-${currentBusiness.id}`;
+            let invChannel = registry[invChanName];
+            if (!invChannel) {
+              invChannel = supabase.channel(invChanName);
+              registry[invChanName] = invChannel;
+              await invChannel.subscribe();
+            }
+            // Canal compartido que el dashboard ya escucha (biz-<id>)
+            const bizChanName = `biz-${currentBusiness.id}`;
+            let bizChannel = registry[bizChanName];
+            if (!bizChannel) {
+              bizChannel = supabase.channel(bizChanName);
+              registry[bizChanName] = bizChannel;
+              await bizChannel.subscribe();
+            }
+            const payload = { type: 'broadcast', event: 'inventory_updated', payload: { businessId: currentBusiness.id } } as any;
+            await Promise.all([
+              invChannel.send(payload).catch(() => {}),
+              bizChannel.send(payload).catch(() => {})
+            ]);
+          } catch (e) {
+            // Silencioso: si falla broadcast no bloquea el update
+          }
+        }
+        toast.success('Producto actualizado');
+        setEditStockModal({ open: false, product: null });
+      } else {
+        console.error('❌ Save failed:', lastErr);
+        // Revertir cambios en cache si falla confirmación
+        updateProductInCache(previousProduct);
+        toast.error('No se pudo guardar en el servidor. Intenta nuevamente.');
+      }
+    } catch (error: any) {
+      console.error('❌ Error updating product:', error);
+      updateProductInCache(previousProduct);
+      toast.error('Error al actualizar el producto');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [editStockModal.product, updateProductInCache, updateProduct, isSaving, currentBusiness?.id, user?.id]);
+
+  // Debug logs (DUPLICADO - comentado)
+  // console.log('🔍 Inventory Debug:', {
+  //   productsLoading,
+  //   productsCount: products.length,
+  //   categoriesLoading,
+  //   categoriesCount: categories.length,
+  //   user: !!user,
+  //   currentBusiness: !!currentBusiness
+  // });
+
+  // Cargar datos iniciales solo una vez + retry si vienen vacíos
+  const initialLoadDone = useRef(false);
+  const retryAttemptsRef = useRef(0);
+  const hasLoadedOnce = useRef(false); // Evita volver al spinner después de tener datos
+  const lastRefreshRef = useRef(0); // Último momento en que se aceptó una carga/refresh
+
+  // Marcar cuando ya tenemos datos (primera vez)
+  useEffect(() => {
+    if (products.length > 0) {
+      hasLoadedOnce.current = true;
+      lastRefreshRef.current = Date.now();
+    }
+  }, [products.length]);
   useEffect(() => {
     if (!user) {
       router.push('/login');
       return;
     }
+    if (!currentBusiness?.id || !user?.id) return;
 
-    loadData();
-  }, [user?.id]);
-
-  // Recargar datos cuando la página se vuelve visible
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && user) {
-        console.log('Página visible, recargando inventario...');
-        loadData();
+    const attemptLoad = (force = false) => {
+      if (!initialLoadDone.current || force) {
+        initialLoadDone.current = true;
+        loadProducts(currentBusiness.id!, user.id!, force);
+        loadCategories();
       }
     };
 
-    // Sin event listeners de visibilidad
-  }, [user?.id]);
+    // Primera carga
+    attemptLoad(false);
 
-  const loadData = async () => {
-    if (loadingData) {
-      console.log('Data already loading, skipping...');
-      return;
+    // Retry progresivo si productos siguen vacíos (hasta 3 veces)
+    if (products.length === 0 && retryAttemptsRef.current < 3) {
+      const timeout = setTimeout(() => {
+        if (products.length === 0 && currentBusiness?.id && user?.id) {
+          retryAttemptsRef.current += 1;
+          attemptLoad(true);
+        }
+      }, 1500 * (retryAttemptsRef.current + 1));
+      return () => clearTimeout(timeout);
     }
-    
-    try {
-      setLoadingData(true);
-      setLoading(true);
-      setLoadingStatus('Cargando datos...');
-      
-      // Limpiar estado antes de cargar
-      setProducts([]);
-      setCategories([]);
-      
-      // Mostrar la página inmediatamente con datos vacíos
-      setLoading(false);
-      
-      // Ejecutar consultas en segundo plano
-      setLoadingStatus('Obteniendo productos...');
-      const productsPromise = (user && currentBusiness?.id)
-        ? getProducts(currentBusiness.id).catch(err => {
-            console.error('Error in products:', err);
-            return [];
-          })
-        : Promise.resolve([]);
-      
-      setLoadingStatus('Obteniendo categorías...');
-      const categoriesPromise = getCategories().catch(err => {
-        console.error('Error in categories:', err);
-        return [];
-      });
-      
-      setLoadingStatus('Finalizando...');
-      const [productsData, categoriesData] = await Promise.all([
-        productsPromise,
-        categoriesPromise
-      ]);
-      
-      setProducts(productsData);
-      setCategories(categoriesData);
-      setLoadingStatus('');
-    } catch (error) {
-      console.error('Error loading inventory data:', error);
-      toast.error('Error al cargar los datos del inventario');
-      // Mostrar datos vacíos en caso de error
-      setProducts([]);
-      setCategories([]);
-    } finally {
-      setLoading(false);
-      setLoadingData(false);
-      setLoadingStatus('');
-    }
-  };
+  }, [user?.id, currentBusiness?.id, products.length]);
+
+  // DESACTIVADO: refresco por visibilidad temporalmente para aislar causa de loading infinito
+  // useEffect(() => { ... })
 
   const handleDeleteProduct = async (productId: string) => {
     if (!confirm('¿Estás seguro de que quieres eliminar este producto?')) {
@@ -297,7 +259,7 @@ export default function Inventory() {
     try {
       const success = await deleteProduct(productId);
       if (success) {
-        setProducts(products.filter(p => p.id !== productId));
+        removeProductFromCache(productId);
         toast.success('Producto eliminado correctamente');
       } else {
         toast.error('Error al eliminar el producto');
@@ -308,7 +270,20 @@ export default function Inventory() {
     }
   };
 
-  const filteredProducts = products.filter(product => {
+  // Memoizar el ordenamiento y filtrado para evitar re-renderizados innecesarios
+  const sortedProducts = useMemo(() => {
+    return [...products].sort((a, b) => {
+      // Primero por nombre alfabético
+      const nameCompare = a.name.localeCompare(b.name);
+      if (nameCompare !== 0) return nameCompare;
+      
+      // Si los nombres son iguales, por fecha de creación (más recientes primero)
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    return sortedProducts.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          product.sku.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = !selectedCategory || product.category_id === selectedCategory;
@@ -316,6 +291,7 @@ export default function Inventory() {
     
     return matchesSearch && matchesCategory && matchesLowStock;
   });
+  }, [sortedProducts, searchTerm, selectedCategory, showLowStock]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CL', {
@@ -342,7 +318,21 @@ export default function Inventory() {
   const lowStockCount = products.filter(p => p.stock <= p.min_stock).length;
   const outOfStockCount = products.filter(p => p.stock === 0).length;
 
-  if (loading) {
+  // Debug logs (DUPLICADO - comentado)
+  // console.log('🔍 Inventory Debug:', {
+  //   productsLoading,
+  //   productsCount: products.length,
+  //   categoriesLoading,
+  //   categoriesCount: categories.length,
+  //   user: !!user,
+  //   currentBusiness: !!currentBusiness
+  // });
+
+  // DESACTIVADO intervalo automático para evitar interferencias durante diagnóstico
+  // useRobustInterval(() => { ... })
+
+  // Mostrar spinner SOLO si todavía no hemos cargado nada nunca
+  if (!hasLoadedOnce.current && productsLoading && products.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -369,6 +359,23 @@ export default function Inventory() {
         )}
         
         <div className="w-full max-w-8xl mx-auto px-3 md:px-4 lg:px-4 space-y-5">
+        {/* Barra debug temporal */}
+        <div className="text-xs bg-gray-100 border border-gray-200 rounded p-2 flex flex-wrap gap-3">
+          <span>debug: productos={products.length}</span>
+          <span>loading={String(productsLoading)}</span>
+          <span>hasLoadedOnce={String(hasLoadedOnce.current)}</span>
+          <span>lastRefresh={(lastRefreshRef.current && new Date(lastRefreshRef.current).toLocaleTimeString()) || '-'}</span>
+          {productsError && <span className="text-red-600">error={productsError}</span>}
+          <button
+            onClick={() => {
+              if (currentBusiness?.id && user?.id) {
+                lastRefreshRef.current = Date.now();
+                refreshProducts(currentBusiness.id, user.id);
+              }
+            }}
+            className="px-2 py-1 bg-blue-600 text-white rounded"
+          >Recargar</button>
+        </div>
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
@@ -401,7 +408,9 @@ export default function Inventory() {
                     if (res.success) {
                       toast.success('Producto importado');
                       setBarcode('');
-                      await loadData();
+                      if (currentBusiness?.id && user?.id) {
+                        await loadProducts(currentBusiness.id, user.id, true);
+                      }
                     } else {
                       toast.error(res.reason || 'No se pudo importar');
                     }
@@ -451,7 +460,9 @@ export default function Inventory() {
                   const result = await importChileProducts(user.id, currentBusiness.id, 10);
                   toast.dismiss('off');
                   toast.success(`Importados: ${result.imported}, Omitidos: ${result.skipped}, Errores: ${result.errors}`);
-                  await loadData();
+                  if (currentBusiness?.id && user?.id) {
+                    await loadProducts(currentBusiness.id, user.id, true);
+                  }
                 } catch {
                   toast.dismiss('off');
                   toast.error('Error al importar productos');
@@ -617,8 +628,8 @@ export default function Inventory() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Costo</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Código de Barras</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Marca</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
@@ -657,8 +668,8 @@ export default function Inventory() {
                             {formatNumber(product.stock)}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(product.price)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(product.cost)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(product.price)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.barcode || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.brand || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{product.supplier_id || '-'}</td>
@@ -722,22 +733,8 @@ export default function Inventory() {
         open={editStockModal.open}
         product={editStockModal.product}
         onClose={() => setEditStockModal({ open: false, product: null })}
-        onSave={async (form: { stock: number; min_stock: number; price: number; cost: number }) => {
-          if (!editStockModal.product) return;
-          const res = await updateProduct(editStockModal.product.id, {
-            stock: Number(form.stock),
-            min_stock: Number(form.min_stock),
-            price: Number(form.price),
-            cost: Number(form.cost),
-          }, editStockModal.product.user_id || '');
-          if (res.success) {
-            toast.success('Producto actualizado');
-            setEditStockModal({ open: false, product: null });
-            await loadData();
-          } else {
-            toast.error(res.error || 'Error al actualizar');
-          }
-        }}
+        onSave={handleModalSave}
+        isSaving={isSaving}
       />
     </SecurityGuard>
   );

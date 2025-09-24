@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Crear Perfil Manual</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Crear Perfil Manual</h1>
+    <button onclick="createProfile()">Crear Perfil</button>
+    <div id="result"></div>
+
+    <script>
+        const supabase = window.supabase.createClient(
+            'https://juupotamdjqzpxuqdtco.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp1dXBvdGFtZGpxenB4dXFkdGNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3MDIyMTgsImV4cCI6MjA2NTI3ODIxOH0.8aXgTBg4vhs0DmTKPg9WGTvQ9hHBd_uCGHgt89ZfM_E'
+        );
+
+        async function createProfile() {
+            try {
+                // Obtener usuario actual
+                const { data: { user }, error: userError } = await supabase.auth.getUser();
+                
+                if (userError || !user) {
+                    document.getElementById('result').innerHTML = '❌ No hay usuario logueado';
+                    return;
+                }
+
+                console.log('Usuario actual:', user);
+
+                // Crear perfil
+                const profileData = {
+                    user_id: user.id,
+                    name: user.user_metadata?.name || user.email?.split('@')[0] || 'Usuario',
+                    email: user.email,
+                    role: 'customer',
+                    store_types: [],
+                    plan_id: 'free',
+                    country_code: 'CL',
+                    currency_code: 'CLP',
+                    app_id: '550e8400-e29b-41d4-a716-446655440000'
+                };
+
+                console.log('Creando perfil con datos:', profileData);
+
+                const { data, error } = await supabase
+                    .from('ws_users')
+                    .insert([profileData])
+                    .select();
+
+                if (error) {
+                    document.getElementById('result').innerHTML = `❌ Error: ${error.message}`;
+                    console.error('Error:', error);
+                } else {
+                    document.getElementById('result').innerHTML = `✅ Perfil creado: ${JSON.stringify(data, null, 2)}`;
+                    console.log('Perfil creado:', data);
+                }
+            } catch (error) {
+                document.getElementById('result').innerHTML = `❌ Error: ${error.message}`;
+                console.error('Error:', error);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,4 +1,5 @@
-import { supabaseAdmin as supabase } from './admin';
+// Usar el cliente autenticado del usuario para que las políticas RLS (auth.uid()) funcionen
+import { supabase } from './client';
 
 // =====================================================
 // INTERFACES PARA SII
@@ -7,6 +8,7 @@ import { supabaseAdmin as supabase } from './admin';
 export interface SiiConfig {
   id: string;
   user_id: string;
+  business_id?: string;
   rut_empresa: string;
   razon_social: string;
   giro_comercial: string;
@@ -47,6 +49,7 @@ export interface ElectronicInvoice {
   medio_pago?: string;
   estado_sii: 'pendiente' | 'enviado' | 'aceptado' | 'rechazado' | 'anulado';
   track_id?: string;
+  codigo_validacion_sii?: string;
   xml_original?: string;
   xml_respuesta?: string;
   errores_sii?: string[];
@@ -121,8 +124,21 @@ export interface SiiLog {
 
 export const siiConfigService = {
   // Obtener configuración SII del usuario
-  async getConfig(userId: string): Promise<SiiConfig | null> {
+  async getConfig(userId: string, businessId?: string): Promise<SiiConfig | null> {
     try {
+      // 1) Intentar por business_id si viene (multi-negocio)
+      if (businessId) {
+        const byBiz = await supabase
+          .from('ws_sii_config')
+          .select('*')
+          .eq('business_id', businessId)
+          .maybeSingle();
+        // Si devuelve datos, úsalo
+        if (byBiz.data) return byBiz.data as any;
+        // Si falla por columna inexistente, caemos al filtro por user
+      }
+
+      // 2) Fallback por user_id
       const { data, error } = await supabase
         .from('ws_sii_config')
         .select('*')
@@ -158,23 +174,29 @@ export const siiConfigService = {
         password_certificado: config.password_certificado?.length || 0
       });
 
-      // Primero verificar si ya existe una configuración para este usuario
-      const { data: existingConfig } = await supabase
+      // Primero verificar si ya existe una configuración para este usuario o negocio
+      const query = supabase
         .from('ws_sii_config')
         .select('*')
-        .eq('user_id', config.user_id)
-        .maybeSingle();
+        .limit(1);
+
+      let existingConfig = null as any;
+      if (config.business_id) {
+        const { data } = await query.eq('business_id', config.business_id).maybeSingle();
+        existingConfig = data;
+      } else if (config.user_id) {
+        const { data } = await query.eq('user_id', config.user_id).maybeSingle();
+        existingConfig = data;
+      }
 
       let result;
       
       if (existingConfig) {
         // Actualizar configuración existente
-        const { data, error } = await supabase
-          .from('ws_sii_config')
-          .update(config)
-          .eq('user_id', config.user_id)
-          .select()
-          .maybeSingle();
+        const upd = supabase.from('ws_sii_config').update(config);
+        const { data, error } = config.business_id
+          ? await upd.eq('business_id', config.business_id).select().maybeSingle()
+          : await upd.eq('user_id', config.user_id as string).select().maybeSingle();
 
         if (error) {
           console.error('Error updating SII config:', error);
@@ -184,9 +206,12 @@ export const siiConfigService = {
         result = data;
       } else {
         // Crear nueva configuración
+        const payload = { ...config } as any;
+        if (!payload.user_id) throw new Error('user_id requerido para crear configuración');
+        // business_id opcional; si existe, se guardará scoping por negocio
         const { data, error } = await supabase
           .from('ws_sii_config')
-          .insert(config)
+          .insert(payload)
           .select()
           .maybeSingle();
 
@@ -274,12 +299,15 @@ export const electronicInvoiceService = {
           return v.toString(16);
         });
       };
-      // Generar folio automático
-      const folio = await this.generateFolio(invoiceData.user_id!);
-      const resolvedAppId = (invoiceData as any).app_id || DEFAULT_APP_ID;
+      // Generar folio automático (prioriza por negocio y tipo)
+      const folio = await this.generateFolio({
+        businessId: (invoiceData as any).business_id,
+        userId: invoiceData.user_id!,
+        // En DB la columna suele ser 'tipo_documento' (p.ej. '39' para boleta)
+        invoiceType: (invoiceData as any).tipo_documento || '39'
+      });
       const baseInvoice: any = {
         ...invoiceData,
-        app_id: resolvedAppId,
         folio,
         estado_sii: 'pendiente'
       };
@@ -287,6 +315,14 @@ export const electronicInvoiceService = {
       // Incluir business_id sólo si viene
       if ((invoiceData as any).business_id) {
         baseInvoice.business_id = (invoiceData as any).business_id;
+      }
+
+      // Asegurar app_id (la columna es NOT NULL en DB)
+      baseInvoice.app_id = (invoiceData as any).app_id || DEFAULT_APP_ID;
+
+      // Asegurar id (evita primer intento fallido si la columna id es NOT NULL sin default)
+      if (!baseInvoice.id) {
+        baseInvoice.id = generateUUID();
       }
 
       let invoice: any = null;
@@ -302,39 +338,9 @@ export const electronicInvoiceService = {
         invoiceError = res.error;
       }
 
-      // Si la columna app_id no existe, reintentar sin app_id
-      if (invoiceError) {
-        const code0 = invoiceError.code || '';
-        const message0 = invoiceError.message || '';
-        const noAppId = code0 === '42703' || /app_id|column .* does not exist/i.test(message0);
-        if (noAppId && 'app_id' in baseInvoice) {
-          const { app_id, ...withoutApp } = baseInvoice;
-          const res2 = await supabase
-            .from('ws_electronic_invoices')
-            .insert(withoutApp)
-            .select()
-            .maybeSingle();
-          invoice = res2.data;
-          invoiceError = res2.error;
-        }
-      }
+      // Ya no realizamos reintento por app_id inexistente, porque no lo enviamos por defecto.
 
-      // Si id es NOT NULL sin default, reintentar con UUID local
-      if (invoiceError) {
-        const code1 = invoiceError.code || '';
-        const message1 = invoiceError.message || '';
-        const nullId = code1 === '23502' && /column "id"|columna "id"|null value in column "id"/i.test(message1);
-        if (nullId) {
-          const payloadWithId = { ...baseInvoice, id: generateUUID() };
-          const res3 = await supabase
-            .from('ws_electronic_invoices')
-            .insert(payloadWithId)
-            .select()
-            .maybeSingle();
-          invoice = res3.data;
-          invoiceError = res3.error;
-        }
-      }
+      // Ya no necesitamos reintentar por id nulo: lo generamos antes del insert.
 
       if (invoiceError) {
         console.error('Error creating invoice:', invoiceError);
@@ -374,7 +380,7 @@ export const electronicInvoiceService = {
         .from('ws_electronic_invoices')
         .select(`
           *,
-          items:ws_electronic_invoice_items(*)
+          items:ws_electronic_invoice_items!ws_electronic_invoice_items_invoice_id_fkey(*)
         `)
         .eq('id', invoiceId)
         .maybeSingle();
@@ -398,7 +404,7 @@ export const electronicInvoiceService = {
         .from('ws_electronic_invoices')
         .select(`
           *,
-          items:ws_electronic_invoice_items(*)
+          items:ws_electronic_invoice_items!ws_electronic_invoice_items_invoice_id_fkey(*)
         `)
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
@@ -417,15 +423,16 @@ export const electronicInvoiceService = {
   },
 
   // Actualizar estado de boleta
-  async updateInvoiceStatus(invoiceId: string, status: ElectronicInvoice['estado_sii'], trackId?: string, xmlRespuesta?: string): Promise<{ success: boolean; error?: string }> {
+  async updateInvoiceStatus(invoiceId: string, status: ElectronicInvoice['estado_sii'], trackId?: string, xmlRespuesta?: string, codigoValidacionSii?: string): Promise<{ success: boolean; error?: string }> {
     try {
       const updateData: any = {
         estado_sii: status,
         updated_at: new Date().toISOString()
       };
 
-      if (trackId) updateData.track_id = trackId;
+  if (trackId) updateData.track_id = trackId;
       if (xmlRespuesta) updateData.xml_respuesta = xmlRespuesta;
+  if (codigoValidacionSii) (updateData as any).codigo_validacion_sii = codigoValidacionSii;
 
       const { error } = await supabase
         .from('ws_electronic_invoices')
@@ -445,30 +452,62 @@ export const electronicInvoiceService = {
   },
 
   // Generar folio automático
-  async generateFolio(userId: string): Promise<number> {
+  async generateFolio(params: { businessId?: string; userId?: string; invoiceType?: string }): Promise<number> {
+    const { businessId, userId, invoiceType = 'boleta' } = params || {} as any;
     try {
-      const { data, error } = await supabase
-        .rpc('generate_electronic_invoice_folio', { user_uuid: userId });
+      // 1) Intentar vía RPC cuando tenemos businessId
+      if (businessId) {
+        const { data, error } = await supabase.rpc('generate_electronic_invoice_folio', {
+          business_id: businessId,
+          invoice_type: invoiceType
+        });
 
-      if (!error && typeof data === 'number') {
-        return data;
+        if (!error) {
+          // La función puede devolver: number | { folio: number } | Array<{ folio: number }>
+          if (typeof data === 'number') return data;
+          if (Array.isArray(data) && data.length > 0 && data[0]?.folio != null) return Number(data[0].folio);
+          if (data && (data as any).folio != null) return Number((data as any).folio);
+        } else {
+          // 404 suele indicar que el RPC no está expuesto o cacheado; continuamos con fallback
+          console.warn('RPC generate_electronic_invoice_folio failed; falling back. Details:', error);
+        }
       }
 
-      // Fallback: usar el mayor folio del usuario + 1
-      const { data: last, error: lastErr } = await supabase
-        .from('ws_electronic_invoices')
-        .select('folio')
-        .eq('user_id', userId)
-        .order('folio', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // 2) Fallback por negocio: mayor folio del business + 1 y tipo
+      if (businessId) {
+        const { data: lastByBiz, error: lastBizErr } = await supabase
+          .from('ws_electronic_invoices')
+          .select('folio')
+          .eq('business_id', businessId)
+          .eq('tipo_documento', invoiceType)
+          .order('folio', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (lastErr) {
-        console.error('Folio fallback query error:', lastErr);
-        return 1;
+        if (!lastBizErr) {
+          const nextBiz = (lastByBiz?.folio as number | undefined) ?? 0;
+          return (nextBiz || 0) + 1;
+        }
       }
-      const next = (last?.folio as number | undefined) ?? 0;
-      return (next || 0) + 1;
+
+      // 3) Fallback por usuario (compatibilidad con datos antiguos)
+      if (userId) {
+        const { data: lastByUser, error: lastUserErr } = await supabase
+          .from('ws_electronic_invoices')
+          .select('folio')
+          .eq('user_id', userId)
+          .order('folio', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!lastUserErr) {
+          const nextUsr = (lastByUser?.folio as number | undefined) ?? 0;
+          return (nextUsr || 0) + 1;
+        }
+      }
+
+      // 4) Último recurso
+      return 1;
     } catch (error) {
       console.error('Error in generateFolio:', error);
       return 1; // Fallback
@@ -579,9 +618,29 @@ export const siiLogService = {
   // Crear log
   async createLog(logData: Partial<SiiLog>): Promise<{ success: boolean; data?: SiiLog; error?: string }> {
     try {
+      const generateUUID = (): string => {
+        try {
+          const g: any = (globalThis as any);
+          if (g?.crypto?.randomUUID) return g.crypto.randomUUID();
+        } catch (_) {}
+        const rnd = (a?: number) => ((a ?? Math.random()) * 16) | 0;
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = rnd();
+          const v = c === 'x' ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      };
+
+      const DEFAULT_APP_ID = '550e8400-e29b-41d4-a716-446655440000';
+      const payload: any = {
+        id: (logData as any)?.id || generateUUID(),
+        app_id: (logData as any)?.app_id || DEFAULT_APP_ID,
+        ...logData
+      };
+
       const { data, error } = await supabase
         .from('ws_sii_logs')
-        .insert(logData)
+        .insert(payload)
         .select()
         .maybeSingle();
 
@@ -647,11 +706,8 @@ export const siiCommunicationService = {
         return { success: false, error: 'Boleta no encontrada' };
       }
 
-      // Obtener configuración SII
-      const config = await siiConfigService.getConfig(invoice.user_id);
-      if (!config) {
-        return { success: false, error: 'Configuración SII no encontrada' };
-      }
+  // Nota: no consultamos configuración SII en cliente para evitar 400s en vistas;
+  // el endpoint server-side decide simulación/credenciales por negocio.
 
       // Crear log de inicio
       await siiLogService.createLog({
@@ -664,8 +720,8 @@ export const siiCommunicationService = {
       // Preparar datos para el SII
       const siiData = {
         folio: invoice.folio,
-        rut_emisor: config.rut_empresa,
-        razon_social_emisor: config.razon_social,
+        rut_emisor: 'N/A',
+        razon_social_emisor: 'N/A',
         rut_receptor: invoice.rut_cliente || '66666666-6', // Consumidor final
         razon_social_receptor: invoice.razon_social_cliente || 'Consumidor Final',
         items: await this.getInvoiceItems(invoiceId),
@@ -674,12 +730,37 @@ export const siiCommunicationService = {
         total: invoice.total
       };
 
-      // Enviar al SII (real o simulado)
-      const result = await this.sendToSii(siiData);
+      // Enviar al SII vía API server-side (centralizado y seguro)
+      // Incluir token de acceso para que el backend valide la sesión
+      const { data: sess } = await supabase.auth.getSession();
+      const accessToken = sess?.session?.access_token;
+      const resp = await fetch('/api/sii/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        },
+        body: JSON.stringify({ invoiceId })
+      });
+      let apiRes: any = null;
+      try {
+        apiRes = await resp.json();
+      } catch (_) {
+        const txt = await resp.text();
+        apiRes = { success: false, error: txt || 'Unknown error' };
+      }
+      const result = resp.ok && apiRes.success
+        ? ({ success: true, trackId: apiRes.trackId, codigoValidacionSii: apiRes.validationCode || apiRes.codigoValidacionSii } as const)
+        : ({ success: false, error: apiRes.error || `HTTP ${resp.status}` } as const);
       
       if (result.success) {
+        // Log de ayuda en cliente para verificar simulación/trackId
+        if (typeof window !== 'undefined') {
+          // Nota: En producción puede provenir del SII; en simulación lo genera el backend
+          console.log('[SII] Envío exitoso. trackId =', result.trackId);
+        }
         // Actualizar estado de la boleta
-        await electronicInvoiceService.updateInvoiceStatus(invoiceId, 'aceptado', result.trackId!, '<xml>respuesta del SII</xml>');
+  await electronicInvoiceService.updateInvoiceStatus(invoiceId, 'aceptado', result.trackId!, '<xml>respuesta del SII</xml>', (result as any).codigoValidacionSii);
         
         // Actualizar log
         await siiLogService.createLog({

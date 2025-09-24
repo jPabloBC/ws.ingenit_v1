@@ -25,29 +25,20 @@ export default function SalesPage() {
     loadCompanyInfo();
   }, [user?.id]);
 
-  // Recargar datos cuando la página se vuelve visible o se recarga manualmente
+  // Manejo robusto de visibilidad - sin recargar datos automáticamente
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        console.log('Página visible, recargando ventas...');
-        loadSales();
-      }
-    };
-
     const handleBeforeUnload = () => {
       console.log('Página se va a recargar, limpiando estado...');
       setSales([]);
       setLoading(true);
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('beforeunload', handleBeforeUnload);
     
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [user?.id]);
+  }, []);
 
   const loadSales = async () => {
     try {
@@ -442,14 +433,14 @@ export default function SalesPage() {
                                           razon_social_cliente: sale.customer?.name || 'Consumidor Final',
                                           rut_cliente: 'N/A',
                                           direccion_cliente: 'N/A',
-                                          subtotal: sale.total_amount / 1.19, // Sin IVA
-                                          iva: sale.total_amount * 0.19 / 1.19, // IVA calculado
-                                          total: sale.total_amount,
+                                          subtotal: Math.round(sale.total_amount / 1.19), // Sin IVA
+                                          iva: Math.round(sale.total_amount - (sale.total_amount / 1.19)), // IVA calculado
+                                          total: Math.round(sale.total_amount),
                                           items: sale.items?.map((item: any) => ({
                                             cantidad: item.quantity,
                                             nombre_producto: item.product_name || item.product?.name || 'Producto',
-                                            precio_unitario: item.unit_price || 0,
-                                            total: item.total_price || 0
+                                            precio_unitario: Math.round(item.unit_price || 0),
+                                            total: Math.round(item.total_price || 0)
                                           })) || [],
                                           track_id: `TRK-${sale.id}`,
                                           estado_sii: 'Aceptado',

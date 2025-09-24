@@ -22,9 +22,18 @@ export const usageService = {
   // Obtener límites del usuario basado en su plan
   getUserLimits: async (userId: string): Promise<UserLimits | null> => {
     try {
-      const { data, error } = await supabase.rpc('get_user_current_plan', {
+      console.log('🔄 getUserLimits called for userId:', userId);
+      
+      // Timeout de 5 segundos para evitar que se cuelgue
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('getUserLimits timeout')), 5000);
+      });
+      
+      const rpcPromise = supabase.rpc('get_user_current_plan', {
         user_id: userId
       });
+      
+      const { data, error } = await Promise.race([rpcPromise, timeoutPromise]);
 
       if (error) {
         // Si la función no existe, devolver límites por defecto para desarrollo
@@ -44,10 +53,20 @@ export const usageService = {
         return null;
       }
 
+      console.log('🔄 getUserLimits result:', data);
       return data;
     } catch (error) {
       console.error('Error in getUserLimits:', error);
-      return null;
+      // En caso de error, devolver límites por defecto
+      return {
+        max_products: null, // Sin límite
+        max_stock_per_product: null, // Sin límite
+        max_categories: null, // Sin límite
+        max_suppliers: null, // Sin límite
+        max_users: null, // Sin límite
+        plan_type: 'free',
+        plan_name: 'Plan Gratuito'
+      };
     }
   },
 

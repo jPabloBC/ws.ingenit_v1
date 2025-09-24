@@ -2,6 +2,9 @@
 import { usePathname } from 'next/navigation';
 import SecurityGuard from '@/components/SecurityGuard';
 import ConnectivityChecker from '@/components/ConnectivityChecker';
+import ConnectionManager from '@/components/ConnectionManager';
+import { ProductsProvider } from '@/contexts/ProductsContext';
+import { CategoriesProvider } from '@/contexts/CategoriesContext';
 import Layout from '@/components/layout/Layout';
 
 export default function ClientLayout({
@@ -18,17 +21,23 @@ export default function ClientLayout({
   return (
     <SecurityGuard>
       <ConnectivityChecker>
-        {needsMinimalLayout ? (
-          // Layout mínimo para onboarding
-          <div className="min-h-screen bg-gray-50">
-            {children}
-          </div>
-        ) : (
-          // Layout completo para todas las demás rutas del cliente
-          <Layout>
-            {children}
-          </Layout>
-        )}
+        <ConnectionManager>
+          <ProductsProvider>
+            <CategoriesProvider>
+              {needsMinimalLayout ? (
+                // Layout mínimo para onboarding
+                <div className="min-h-screen bg-gray-50">
+                  {children}
+                </div>
+              ) : (
+                // Layout completo para todas las demás rutas del cliente
+                <Layout>
+                  {children}
+                </Layout>
+              )}
+            </CategoriesProvider>
+          </ProductsProvider>
+        </ConnectionManager>
       </ConnectivityChecker>
     </SecurityGuard>
   );

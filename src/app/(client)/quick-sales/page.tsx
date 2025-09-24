@@ -12,7 +12,8 @@ import { useStore } from '@/contexts/StoreContext';
 import { getProducts } from '@/services/supabase/products';
 import { createSale } from '@/services/supabase/sales';
 import TransbankService from '@/services/payments/transbank';
-import { electronicInvoiceService, siiCommunicationService } from '@/services/supabase/sii';
+import { electronicInvoiceService, siiCommunicationService, siiLogService } from '@/services/supabase/sii';
+import InvoiceActions from '@/components/invoices/InvoiceActions';
 import CurrencyInput from '@/components/ui/CurrencyInput';
 import toast from 'react-hot-toast';
 import SecurityGuard from '@/components/SecurityGuard';
@@ -83,16 +84,8 @@ export default function QuickSalesPage() {
     loadUserProfile();
   }, [user?.id, currentBusiness?.id]);
 
-  // Recargar datos cuando la página se vuelve visible o se recarga manualmente
+  // Manejo robusto de visibilidad - sin recargar datos automáticamente
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && user) {
-        console.log('Página visible, recargando quick-sales...');
-        loadProducts();
-        loadUserProfile();
-      }
-    };
-
     const handleBeforeUnload = () => {
       console.log('Página se va a recargar, limpiando estado...');
       setProducts([]);
@@ -100,14 +93,12 @@ export default function QuickSalesPage() {
       setLoading(true);
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('beforeunload', handleBeforeUnload);
     
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => {
     const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
@@ -115,22 +106,34 @@ export default function QuickSalesPage() {
     const vat = subtotal * vatRate;
     const totalWithVat = subtotal + vat;
     const cartItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-    // Redondeo sólo para CLP a múltiplos de 10 (hacia arriba para evitar quedarse corto)
+    
+    // Para Chile, redondear todos los valores monetarios
     if (userProfile?.country_code === 'CL') {
-      const rounded = Math.ceil(totalWithVat / 10) * 10;
+      const roundedSubtotal = Math.round(subtotal);
+      const roundedVat = Math.round(vat);
+      const roundedTotalWithVat = Math.round(totalWithVat);
+      const rounded = Math.ceil(roundedTotalWithVat / 10) * 10;
       setRoundedTotal(rounded);
+      
+      setStats(prev => ({
+        ...prev,
+        subtotal: roundedSubtotal,
+        vat: roundedVat,
+        totalWithVat: roundedTotalWithVat,
+        cartTotal: roundedTotalWithVat,
+        cartItems
+      }));
     } else {
       setRoundedTotal(totalWithVat);
+      setStats(prev => ({
+        ...prev,
+        subtotal,
+        vat,
+        totalWithVat,
+        cartTotal: totalWithVat,
+        cartItems
+      }));
     }
-    
-    setStats(prev => ({
-      ...prev,
-      subtotal,
-      vat,
-      totalWithVat,
-      cartTotal: totalWithVat,
-      cartItems
-    }));
   }, [cart, userProfile]);
 
   const recalcStatsBase = useCallback((items: Product[]) => {
@@ -174,8 +177,10 @@ export default function QuickSalesPage() {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',
-      currency: 'CLP'
-    }).format(amount);
+      currency: 'CLP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(Math.round(amount));
   };
 
 
@@ -258,6 +263,8 @@ export default function QuickSalesPage() {
 
 
   const addToCart = (product: Product) => {
+    // Nueva venta en curso: limpiar boleta mostrada
+    setLastInvoice(null);
     setCart(prevCart => {
       const existingItem = prevCart.find(item => item.product.id === product.id);
 
@@ -293,6 +300,7 @@ export default function QuickSalesPage() {
   };
 
   const updateQuantity = (productId: string, newQuantity: number) => {
+    setLastInvoice(null);
     if (newQuantity <= 0) {
       removeFromCart(productId);
       return;
@@ -314,6 +322,7 @@ export default function QuickSalesPage() {
   };
 
   const removeFromCart = (productId: string) => {
+    setLastInvoice(null);
     setCart(prevCart => prevCart.filter(item => item.product.id !== productId));
   };
 
@@ -401,9 +410,10 @@ export default function QuickSalesPage() {
       // Crear boleta electrónica para efectivo
       const invoiceData = {
         user_id: user!.id,
+        business_id: currentBusiness?.id,
         sale_id: saleId,
         tipo_documento: '39', // Boleta electrónica
-        fecha_emision: new Date().toISOString(),
+        fecha_emision: new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago' })).toISOString(),
         rut_cliente: '', // Boleta anónima
         razon_social_cliente: 'Consumidor Final',
         email_cliente: '',
@@ -411,9 +421,9 @@ export default function QuickSalesPage() {
         direccion_cliente: '',
         comuna_cliente: '',
         ciudad_cliente: '',
-        subtotal: stats.subtotal,
-        iva: stats.vat,
-        total: stats.totalWithVat,
+        subtotal: Math.round(stats.subtotal),
+        iva: Math.round(stats.vat),
+        total: Math.round(stats.totalWithVat),
         forma_pago: 'efectivo',
         medio_pago: 'efectivo'
       };
@@ -422,11 +432,11 @@ export default function QuickSalesPage() {
         product_id: item.product.id,
         nombre_producto: item.product.name,
         cantidad: item.quantity,
-        precio_unitario: item.product.price,
+        precio_unitario: Math.round(item.product.price),
         descuento: 0,
-        subtotal: item.total,
-        iva: item.total * 0.19,
-        total: item.total * 1.19,
+        subtotal: Math.round(item.total),
+        iva: Math.round(item.total * 0.19),
+        total: Math.round(item.total * 1.19),
         codigo_producto: item.product.sku,
         unidad_medida: 'UN'
       }));
@@ -434,9 +444,19 @@ export default function QuickSalesPage() {
       const result = await electronicInvoiceService.createInvoice(invoiceData, items);
 
       if (result.success) {
+        // Cargar boleta completa para acciones (ver/descargar/imprimir)
+        const created = await electronicInvoiceService.getInvoiceById(result.data!.id);
+        if (created) setLastInvoice(created);
+
         // Enviar al SII
-        await siiCommunicationService.sendInvoiceToSii(result.data!.id);
-        console.log('Boleta en efectivo generada exitosamente');
+        const siiRes = await siiCommunicationService.sendInvoiceToSii(result.data!.id);
+        if (siiRes.success) {
+          toast.success(`Boleta generada y enviada. TrackID: ${siiRes.trackId}`);
+          // Refrescar datos locales de la boleta para incluir trackId/estado
+          setLastInvoice((prev: any | null) => prev ? { ...prev, track_id: siiRes.trackId, estado_sii: 'aceptado' } : prev);
+        } else {
+          toast.error(`Boleta generada pero error al enviar al SII: ${siiRes.error}`);
+        }
       } else {
         console.error('Error generando boleta en efectivo:', result.error);
       }
@@ -510,6 +530,7 @@ export default function QuickSalesPage() {
   const roundingDiff = userProfile?.country_code === 'CL' ? (roundedTotal - stats.totalWithVat) : 0;
   const change = paymentMethod === 'cash' && cashReceived ? cashReceived - effectiveTotal : 0;
   const vatPercentage = (userProfile?.country_code ? VAT_RATES[userProfile.country_code] || 0 : 0) * 100;
+  const [lastInvoice, setLastInvoice] = useState<any | null>(null);
 
   if (!user) {
     return (
@@ -520,6 +541,22 @@ export default function QuickSalesPage() {
       </SecurityGuard>
     );
   }
+
+  // UI: pequeño card con último estado SII (simplificado)
+  const [lastSiiInfo, setLastSiiInfo] = useState<{ trackId?: string; estado?: string } | null>(null);
+  useEffect(() => {
+    // Carga simple del último log por usuario para feedback rápido
+    (async () => {
+      try {
+        const logs = await siiLogService.getUserLogs(user!.id, 1);
+        if (logs && logs[0]) {
+          setLastSiiInfo({ trackId: (logs[0] as any).track_id, estado: logs[0].estado });
+        }
+      } catch (e) {
+        // no-op
+      }
+    })();
+  }, [user?.id]);
 
   return (
     <SecurityGuard>
@@ -585,6 +622,21 @@ export default function QuickSalesPage() {
             icon={Package}
             color="orange"
           />
+          {/* Estado SII reciente */}
+          <div className="md:col-span-2">
+            <div className="p-4 border rounded-md bg-white flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Último envío SII</p>
+                <p className="text-sm text-gray-900">
+                  TrackID: {lastSiiInfo?.trackId || '—'}
+                  <span className="ml-3">Estado: {lastSiiInfo?.estado || '—'}</span>
+                </p>
+              </div>
+              <Button variant="outline" onClick={() => window.location.assign('/invoices/sii-logs')}>
+                Ver historial
+              </Button>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -799,6 +851,32 @@ export default function QuickSalesPage() {
                 )}
               </CardContent>
             </Card>
+
+            {lastInvoice && (
+              <div className="mt-6">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle>Boleta emitida</CardTitle>
+                      <Button variant="outline" size="sm" onClick={() => setLastInvoice(null)}>Limpiar</Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Folio: {lastInvoice.folio || '—'}</p>
+                        <p className="text-sm text-gray-600">TrackID: {lastInvoice.track_id || '—'}</p>
+                        <p className="text-sm text-gray-600">Estado SII: {lastInvoice.estado_sii || 'pendiente'}</p>
+                      </div>
+                      <InvoiceActions
+                        invoiceId={lastInvoice.id}
+                        invoiceData={lastInvoice}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </div>
         </div>
       </div>

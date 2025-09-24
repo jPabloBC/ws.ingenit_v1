@@ -33,8 +33,8 @@ export default function InvoiceActions({
       // Simular descarga de boleta
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Crear contenido de la boleta
-      const invoiceContent = generateInvoiceContent(invoiceData);
+  // Crear contenido de la boleta (con QR)
+  const invoiceContent = await generateInvoiceContent(invoiceData);
       
       // Crear y descargar archivo
       const blob = new Blob([invoiceContent], { type: 'text/html' });
@@ -67,16 +67,22 @@ export default function InvoiceActions({
       // Simular impresión
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Crear contenido de la boleta
-      const invoiceContent = generateInvoiceContent(invoiceData);
+  // Crear contenido de la boleta (con QR)
+  const invoiceContent = await generateInvoiceContent(invoiceData);
       
       // Abrir ventana de impresión
       const printWindow = window.open('', '_blank');
       if (printWindow) {
+        printWindow.document.open();
         printWindow.document.write(invoiceContent);
         printWindow.document.close();
-        printWindow.print();
-        printWindow.close();
+        // Dar tiempo a que cargue la imagen QR antes de imprimir
+        const maybePrint = () => {
+          try { printWindow.focus(); printWindow.print(); } catch (_) {}
+          setTimeout(() => { try { printWindow.close(); } catch (_) {} }, 300);
+        };
+        // Intentar esperar a la carga
+        setTimeout(maybePrint, 350);
       }
       
       toast.success('Impresión iniciada');
@@ -99,12 +105,13 @@ export default function InvoiceActions({
       // Simular vista previa
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Crear contenido de la boleta
-      const invoiceContent = generateInvoiceContent(invoiceData);
+  // Crear contenido de la boleta (con QR)
+  const invoiceContent = await generateInvoiceContent(invoiceData);
       
       // Abrir en nueva ventana
       const viewWindow = window.open('', '_blank');
       if (viewWindow) {
+        viewWindow.document.open();
         viewWindow.document.write(invoiceContent);
         viewWindow.document.close();
       }
@@ -118,139 +125,94 @@ export default function InvoiceActions({
     }
   };
 
-  const generateInvoiceContent = (data: any) => {
+  const generateInvoiceContent = async (data: any) => {
+    const fmt = (n?: number) => Math.round(n ?? 0).toLocaleString('es-CL');
+    const nowStr = new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' });
+    const fecha = data?.fecha_emision ? new Date(data.fecha_emision).toLocaleString('es-CL', { timeZone: 'America/Santiago' }) : nowStr;
+    const businessName = data?.razon_social || data?.business_name || 'NEGOCIO';
+    const rutEmisor = data?.rut_empresa || 'N/A';
+    const direccion = [data?.direccion, data?.comuna, data?.ciudad].filter(Boolean).join(', ');
+    const pago = data?.forma_pago || data?.medio_pago || 'Efectivo';
+    const validationCode = data?.codigo_validacion_sii || (data?.folio && data?.track_id ? `SII-${data.folio}-${String(data.track_id).slice(-6).toUpperCase()}` : 'SII-PENDIENTE');
+    const verificationUrl = data?.track_id
+      ? `https://www4.sii.cl/consltuDte?trackId=${encodeURIComponent(data.track_id)}&rut_emisor=${encodeURIComponent(rutEmisor)}&folio=${encodeURIComponent(data.folio || '')}`
+      : `https://www.sii.cl/`;
+    // Generar QR como DataURL (preferimos URL de verificación; si no, el propio código)
+    let qrDataUrl = '';
+    try {
+      const QR = await import('qrcode');
+      const toDataURL = (QR as any)?.toDataURL || (QR as any)?.default?.toDataURL;
+      if (typeof toDataURL === 'function') {
+        qrDataUrl = await toDataURL(verificationUrl || String(validationCode), { width: 128, margin: 1 });
+      }
+    } catch (_) {
+      // sin dependencia o error, dejamos vacío y solo mostramos el código
+      qrDataUrl = '';
+    }
+
+    const itemsHtml = Array.isArray(data?.items) && data.items.length > 0
+      ? data.items.map((item: any) => {
+          const nombre = item.nombre_producto || item.descripcion || item.product_name || 'Item';
+          const cantidad = item.cantidad ?? item.quantity ?? 1;
+          const precio = item.precio_unitario ?? item.unit_price ?? 0;
+          const total = item.total ?? item.total_price ?? (cantidad * precio);
+          return `
+            <div>
+              <div>${nombre}</div>
+              <div class="row small"><div>${cantidad} x $${fmt(precio)}</div><div>$${fmt(total)}</div></div>
+            </div>
+          `;
+        }).join('')
+      : '<div class="small">(Sin items)</div>';
+
     return `
       <!DOCTYPE html>
       <html lang="es">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Boleta Electrónica ${data.folio || ''}</title>
+        <title>Boleta ${data.folio || ''}</title>
         <style>
-          body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-          }
-          .invoice-container {
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-          }
-          .header {
-            text-align: center;
-            border-bottom: 2px solid #333;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-          }
-          .company-info {
-            margin-bottom: 20px;
-          }
-          .invoice-details {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 30px;
-          }
-          .customer-info {
-            margin-bottom: 30px;
-          }
-          .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 30px;
-          }
-          .items-table th,
-          .items-table td {
-            border: 1px solid #ddd;
-            padding: 12px;
-            text-align: left;
-          }
-          .items-table th {
-            background-color: #f8f9fa;
-            font-weight: bold;
-          }
-          .totals {
-            text-align: right;
-            margin-top: 20px;
-          }
-          .total-row {
-            font-size: 18px;
-            font-weight: bold;
-            margin-top: 10px;
-          }
-          .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-          }
-          @media print {
-            body { background-color: white; }
-            .invoice-container { box-shadow: none; }
-          }
+          @page { size: 58mm auto; margin: 0; }
+          body { margin: 0; padding: 0; background: #fff; }
+          .ticket { width: 58mm; padding: 2mm; font-family: "Courier New", monospace; font-size: 11px; color: #000; }
+          .center { text-align: center; }
+          .right { text-align: right; }
+          .bold { font-weight: bold; }
+          .small { font-size: 10px; }
+          .row { display: flex; justify-content: space-between; gap: 6px; }
+          hr { border: 0; border-top: 1px dashed #000; margin: 4px 0; }
+          .mt-2 { margin-top: 8px; }
+          .mb-1 { margin-bottom: 4px; }
+          .mb-2 { margin-bottom: 8px; }
         </style>
       </head>
       <body>
-        <div class="invoice-container">
-          <div class="header">
-            <h1>BOLETA ELECTRÓNICA</h1>
-            <h2>${data.razon_social_cliente || 'Consumidor Final'}</h2>
-            <p>Folio: ${data.folio || 'N/A'}</p>
-            <p>Fecha: ${new Date(data.fecha_emision).toLocaleDateString('es-CL')}</p>
-          </div>
-
-          <div class="company-info">
-            <h3>Datos del Emisor</h3>
-            <p><strong>RUT:</strong> ${data.rut_empresa || 'N/A'}</p>
-            <p><strong>Razón Social:</strong> ${data.razon_social || 'N/A'}</p>
-            <p><strong>Dirección:</strong> ${data.direccion || 'N/A'}</p>
-            <p><strong>Comuna:</strong> ${data.comuna || 'N/A'}</p>
-            <p><strong>Ciudad:</strong> ${data.ciudad || 'N/A'}</p>
-          </div>
-
-          <div class="customer-info">
-            <h3>Datos del Cliente</h3>
-            <p><strong>RUT:</strong> ${data.rut_cliente || 'N/A'}</p>
-            <p><strong>Razón Social:</strong> ${data.razon_social_cliente || 'Consumidor Final'}</p>
-            <p><strong>Dirección:</strong> ${data.direccion_cliente || 'N/A'}</p>
-          </div>
-
-          <table class="items-table">
-            <thead>
-              <tr>
-                <th>Cantidad</th>
-                <th>Descripción</th>
-                <th>Precio Unit.</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${data.items ? data.items.map((item: any) => `
-                <tr>
-                  <td>${item.cantidad}</td>
-                  <td>${item.nombre_producto}</td>
-                  <td>$${item.precio_unitario?.toLocaleString('es-CL') || '0'}</td>
-                  <td>$${item.total?.toLocaleString('es-CL') || '0'}</td>
-                </tr>
-              `).join('') : '<tr><td colspan="4">No hay items</td></tr>'}
-            </tbody>
-          </table>
-
-          <div class="totals">
-            <p><strong>Subtotal:</strong> $${data.subtotal?.toLocaleString('es-CL') || '0'}</p>
-            <p><strong>IVA (19%):</strong> $${data.iva?.toLocaleString('es-CL') || '0'}</p>
-            <p class="total-row"><strong>TOTAL:</strong> $${data.total?.toLocaleString('es-CL') || '0'}</p>
-          </div>
-
-          <div class="footer">
-            <p>Este documento es una representación impresa de una boleta electrónica</p>
-            <p>Track ID: ${data.track_id || 'N/A'} | Estado SII: ${data.estado_sii || 'N/A'}</p>
-            <p>Generado el ${new Date().toLocaleString('es-CL')}</p>
-          </div>
+        <div class="ticket">
+          <div class="center bold">${businessName}</div>
+          <div class="center">RUT ${rutEmisor}</div>
+          ${direccion ? `<div class="center small">${direccion}</div>` : ''}
+          <hr />
+          <div class="center bold">BOLETA ELECTRÓNICA</div>
+          <div class="center">FOLIO: ${data.folio || 'N/A'}</div>
+          <div class="center small">${fecha}</div>
+          <hr />
+          ${itemsHtml}
+          <hr />
+          <div class="row"><div>SUBTOTAL</div><div>$${fmt(data.subtotal)}</div></div>
+          <div class="row"><div>IVA 19%</div><div>$${fmt(data.iva)}</div></div>
+          <div class="row bold"><div>TOTAL</div><div>$${fmt(data.total)}</div></div>
+          <hr />
+          <div class="small">Medio de pago: ${pago}</div>
+          <hr />
+          <div class="center bold">TIMBRE SII</div>
+          <div class="center small">Código de validación</div>
+          <pre class="center small" style="white-space: pre-wrap; word-break: break-word;">${validationCode}</pre>
+          ${qrDataUrl ? `<div class="center"><img src="${qrDataUrl}" alt="QR" style="width:120px;height:auto;" /></div>` : ''}
+          <div class="small">Verifica en: ${verificationUrl}</div>
+          <div class="center small">TrackID: ${data.track_id || 'N/A'}</div>
+          <div class="center small mb-2">Estado SII: ${data.estado_sii || 'pendiente'}</div>
+          <div class="center small">Gracias por su compra</div>
         </div>
       </body>
       </html>

@@ -107,9 +107,9 @@ export const getCategories = async (storeType?: string, businessId?: string): Pr
       return fallback.data || [];
     }
 
-  console.log('✅ Categories fetched successfully:', data?.length || 0, 'storeTypeFilter=', storeType, 'businessFilterApplied=', !!businessId);
+  // console.log('✅ Categories fetched successfully:', data?.length || 0, 'storeTypeFilter=', storeType, 'businessFilterApplied=', !!businessId);
     if (data && data.length > 0) {
-      console.log('📂 Sample category:', { id: data[0].id, name: data[0].name, store_type: (data[0] as any).store_type });
+      // console.log('📂 Sample category:', { id: data[0].id, name: data[0].name, store_type: (data[0] as any).store_type });
     }
     return data || [];
   } catch (error) {
