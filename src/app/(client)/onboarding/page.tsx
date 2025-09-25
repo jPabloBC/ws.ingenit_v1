@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 ;;
 import { useRouter } from 'next/navigation';
 // Removido: supabase no usado
-import { supabaseAdmin } from '@/services/supabase/admin';
+import { supabase } from '@/services/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import Button from '@/components/ui/Button';
 // Imports de iconos removidos ya que no se usan en esta pantalla

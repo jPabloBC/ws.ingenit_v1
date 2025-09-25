@@ -238,41 +238,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           localStorage.setItem('selectedStoreType', resolvedKey);
           // console.log('✅ StoreContext - Configuración establecida:', { business: selectedBusiness.id, type: resolvedKey });
         } else {
-          // console.warn('⚠️ StoreContext - No hay negocios para el usuario, usando defaults');
-          // console.log('🔍 StoreContext - Verificando si necesitamos crear un negocio por defecto...');
-          
-          // Intentar crear un negocio por defecto si el usuario no tiene ninguno
-          try {
-            const defaultBusiness = {
-              name: 'Mi Negocio',
-              store_type: 'almacen',
-              address: '',
-              phone: '',
-              email: user.email || '',
-              is_active: true
-            };
-            // console.log('🏪 StoreContext - Creando negocio por defecto:', defaultBusiness);
-            const result = await businessesService.createBusiness(defaultBusiness, user.id);
-            if (result.success && result.data) {
-              // console.log('✅ StoreContext - Negocio por defecto creado:', result.data);
-              setUserBusinesses([result.data]);
-              setCurrentBusinessState(result.data);
-              setStoreTypeState('almacen');
-              setStoreConfig(storeConfigs['almacen']);
-              localStorage.setItem('selectedBusinessId', result.data.id);
-              localStorage.setItem('selectedStoreType', 'almacen');
-            } else {
-              // console.error('❌ StoreContext - Error creando negocio por defecto:', result.error);
-              const savedStoreType = localStorage.getItem('selectedStoreType') || 'almacen';
-              setStoreTypeState(savedStoreType);
-              setStoreConfig(storeConfigs[savedStoreType]);
-            }
-          } catch (createError) {
-            // console.error('❌ StoreContext - Error creando negocio por defecto:', createError);
-            const savedStoreType = localStorage.getItem('selectedStoreType') || 'almacen';
-            setStoreTypeState(savedStoreType);
-            setStoreConfig(storeConfigs[savedStoreType]);
-          }
+          // No crear negocio por defecto automáticamente. Solo se crea en la selección de negocio.
+          setUserBusinesses([]);
+          setCurrentBusinessState(null);
+          setStoreTypeState(null);
+          setStoreConfig(null);
+          localStorage.removeItem('selectedBusinessId');
+          localStorage.removeItem('selectedStoreType');
         }
       } catch (error) {
   // console.error('❌ StoreContext - Error cargando negocios:', error);

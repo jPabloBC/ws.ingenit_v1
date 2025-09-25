@@ -93,11 +93,6 @@ export default function QuickSalesPage() {
       setLoading(true);
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
   }, []);
 
   useEffect(() => {

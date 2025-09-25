@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Archivo, Sansation } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
-import ErrorHandler from "@/components/ErrorHandler";
 import ConditionalProviders from "@/components/ConditionalProviders";
 
 const archivo = Archivo({
@@ -50,7 +49,6 @@ export default function RootLayout({
         <meta name="msapplication-TileImage" content="/assets/icon_ingenIT.png" />
       </head>
       <body className="font-body antialiased bg-gray10 text-blue1">
-        <ErrorHandler />
         <ConditionalProviders>
           {children}
         </ConditionalProviders>

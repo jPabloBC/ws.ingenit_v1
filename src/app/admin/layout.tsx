@@ -1,7 +1,6 @@
 'use client';
 import { usePathname } from 'next/navigation';
 import AdminNavigation from '@/components/admin/AdminNavigation';
-import ConnectivityChecker from '@/components/ConnectivityChecker';
 
 export default function AdminLayout({
   children,
@@ -17,9 +16,7 @@ export default function AdminLayout({
         
         {/* Main content with conditional sidebar offset */}
         <div className={!isLoginPage ? "md:ml-64 min-h-screen" : "min-h-screen"}>
-          <ConnectivityChecker>
-            {children}
-          </ConnectivityChecker>
+          {children}
         </div>
       </div>
   );

@@ -5,14 +5,40 @@ import { supabase } from '@/services/supabase/client';
 import { businessesService } from '@/services/supabase/businesses';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { Check, Store, ArrowRight } from 'lucide-react';
+
+import { Check, Store, ArrowRight, Wine, Hammer, Book, Utensils, ShoppingCart } from 'lucide-react';
 
 const storeTypes = [
-  { id: 'almacen', name: 'Almacén', description: 'Tienda de abarrotes, minimarket, almacén de barrio', icon: '🏪' },
-  { id: 'botilleria', name: 'Botillería', description: 'Venta de bebidas alcohólicas y productos relacionados', icon: '�' },
-  { id: 'ferreteria', name: 'Ferretería', description: 'Venta de herramientas, materiales y artículos de ferretería', icon: '�️' },
-  { id: 'libreria', name: 'Librería', description: 'Venta de libros, útiles escolares y de oficina', icon: '�' },
-  { id: 'restaurante', name: 'Restaurante', description: 'Servicio de comida y bebidas', icon: '🍽️' }
+  {
+    id: 'almacen',
+    name: 'Almacén',
+    description: 'Tienda de abarrotes, minimarket, almacén de barrio',
+    icon: <ShoppingCart className="h-10 w-10 text-blue-400" strokeWidth={1.5} />
+  },
+  {
+    id: 'botilleria',
+    name: 'Botillería',
+    description: 'Venta de bebidas alcohólicas y productos relacionados',
+  icon: <Wine className="h-10 w-10 text-amber-500" strokeWidth={1.5} />
+  },
+  {
+    id: 'ferreteria',
+    name: 'Ferretería',
+    description: 'Venta de herramientas, materiales y artículos de ferretería',
+  icon: <Hammer className="h-10 w-10 text-gray-500" strokeWidth={1.5} />
+  },
+  {
+    id: 'libreria',
+    name: 'Librería',
+    description: 'Venta de libros, útiles escolares y de oficina',
+  icon: <Book className="h-10 w-10 text-green-600" strokeWidth={1.5} />
+  },
+  {
+    id: 'restaurante',
+    name: 'Restaurante',
+    description: 'Servicio de comida y bebidas',
+  icon: <Utensils className="h-10 w-10 text-rose-500" strokeWidth={1.5} />
+  }
 ];
 
 
@@ -233,7 +259,7 @@ function SelectBusinessContent() {
       <div className="relative z-10 w-full max-w-5xl mx-auto">
         <div className="text-center mb-10">
           <div className="w-20 h-20 mx-auto mb-6 bg-blue-500/10 border border-blue-400/30 rounded-2xl flex items-center justify-center shadow-inner">
-            <Store className="h-10 w-10 text-blue-300" />
+            <Store className="h-10 w-10 text-blue-300" strokeWidth={1.5} />
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-white mb-4">Selecciona tu tipo de negocio</h1>
           <p className="text-slate-300 max-w-2xl mx-auto text-base md:text-lg">
@@ -242,20 +268,23 @@ function SelectBusinessContent() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-10">
           {storeTypes.map(storeType => {
+            const isAlmacen = storeType.id === 'almacen';
             const active = selectedStoreTypes.includes(storeType.id);
+            const disabled = !isAlmacen;
             return (
               <button
                 type="button"
                 key={storeType.id}
-                onClick={() => handleStoreTypeToggle(storeType.id)}
+                onClick={() => !disabled && handleStoreTypeToggle(storeType.id)}
+                disabled={disabled}
                 className={`group relative rounded-xl border p-6 text-left transition shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 ${
                   active
                     ? 'border-blue-400/60 bg-blue-500/10 ring-2 ring-blue-400/40'
                     : 'border-white/10 bg-white/5 hover:border-blue-300/40 hover:bg-blue-400/5'
-                }`}
+                } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
               >
                 <div className="flex flex-col items-center text-center">
-                  <div className="text-4xl mb-4 drop-shadow-sm">{storeType.icon}</div>
+                  <div className="mb-4 drop-shadow-sm flex items-center justify-center">{storeType.icon}</div>
                   <h3 className="font-semibold text-white mb-2 text-lg">{storeType.name}</h3>
                   <p className="text-slate-300 text-sm leading-relaxed mb-4 min-h-[48px]">{storeType.description}</p>
                   {active && (
@@ -263,7 +292,16 @@ function SelectBusinessContent() {
                       <Check className="h-4 w-4" /> Seleccionado
                     </div>
                   )}
+                  {disabled && (
+                    <span className="absolute left-1/2 bottom-4 -translate-x-1/2 bg-black/70 text-white text-base px-5 py-2 rounded-full z-20 select-none pointer-events-none flex items-center gap-2 shadow-lg" style={{backdropFilter:'blur(2.5px)', fontWeight:'bold', letterSpacing:'0.5px'}}>
+                      <Hammer className="h-5 w-5 text-yellow-400 mr-1" strokeWidth={2} />
+                      Próximamente
+                    </span>
+                  )}
                   <div className={`absolute inset-0 rounded-xl pointer-events-none transition opacity-0 group-hover:opacity-100 ${active ? 'bg-blue-400/5' : 'bg-blue-300/5'}`} />
+                  {disabled && (
+                    <div className="absolute inset-0 rounded-xl bg-black/40 z-10 pointer-events-none" style={{backdropFilter:'blur(1.5px)'}} />
+                  )}
                 </div>
               </button>
             );

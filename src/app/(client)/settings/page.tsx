@@ -2,10 +2,7 @@
 import { useState } from 'react';
 import { Settings, Building, FileText, CreditCard, User, Bell, Shield, Database, Globe, Palette } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import Layout from '@/components/layout/Layout';
-// Removido: import no usado
 import Button from '@/components/ui/Button';
-import SecurityGuard from '@/components/SecurityGuard';
 // Removido: import no usado
 interface SettingsSection {
   id: string;
@@ -101,9 +98,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <SecurityGuard>
-        <Layout>
-      <div className="p-6">
+    <div className="px-4 md:px-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
           <p className="text-gray-600">Gestiona todas las configuraciones de tu sistema</p>
@@ -207,8 +202,6 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </div>
-      </div>
-    </Layout>
-  
-      </SecurityGuard>);
+    </div>
+  );
 }

@@ -33,11 +33,6 @@ export default function SalesPage() {
       setLoading(true);
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
   }, []);
 
   const loadSales = async () => {

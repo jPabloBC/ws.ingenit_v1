@@ -86,40 +86,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     init();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!active) return;
-  // console.log('🔄 Auth state change:', event, !!session?.user);
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        try {
-          const { data: userData } = await supabase
-            .from('ws_users')
-            .select('email_verified')
-            .eq('email', session.user.email)
-            .maybeSingle();
-          if (userData?.email_verified || session.user.email_confirmed_at) {
-            await loadUserRole(session.user.id);
-          } else {
-            setUserRole(null);
-          }
-        } catch (err) {
-          // console.error('[Auth] email verification check failed', err);
-          if (session.user.email_confirmed_at) {
-            await loadUserRole(session.user.id);
-          } else {
-            setUserRole(null);
-          }
-        }
-      } else {
-        setUserRole(null);
-      }
-      setLoading(false);
-    });
-
     return () => {
       active = false;
-      subscription.unsubscribe();
     };
   }, []);
 

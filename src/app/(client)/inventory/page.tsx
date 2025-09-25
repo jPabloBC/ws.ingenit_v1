@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Package, AlertTriangle, Filter, Search, Plus, Globe, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
@@ -10,14 +10,10 @@ import { useStore } from '@/contexts/StoreContext';
 import { getProducts, deleteProduct, updateProduct, Product } from '@/services/supabase/products';
 import { getCategories } from '@/services/supabase/categories';
 import toast from 'react-hot-toast';
-import { importChileProducts, importProductByBarcode } from '@/services/integrations/openFoodFacts';
+import { importProductByBarcode } from '@/services/integrations/openFoodFacts';
 import SecurityGuard from '@/components/SecurityGuard';
-import { useProducts } from '@/contexts/ProductsContext';
-import { useCategories } from '@/contexts/CategoriesContext';
 import EditStockModal from '@/components/modals/EditStockModal';
 import { supabase } from '@/services/supabase/client';
-import { useRobustInterval } from '@/hooks/useRobustInterval';
-import { usePageVisibility } from '@/hooks/usePageVisibility';
 
 // Modal movido a componente separado para mejor rendimiento
 
@@ -26,70 +22,48 @@ export default function Inventory() {
   const { user, userRole } = useAuth();
   const { storeConfig, currentBusiness } = useStore();
   
-  // Usar contexto global de productos
-  const { 
-    products, 
-    loading: productsLoading, 
-    error: productsError,
-    loadProducts,
-    refreshProducts,
-    updateProduct: updateProductInCache,
-    removeProduct: removeProductFromCache
-  } = useProducts();
-  
-  // Usar contexto global de categorías
-  const {
-    categories,
-    loading: categoriesLoading,
-    error: categoriesError,
-    loadCategories
-  } = useCategories();
-  
-  // Hook de visibilidad para recargar datos cuando vuelve al primer plano
-  const { isVisible } = usePageVisibility();
-  
-  const [loading, setLoading] = useState(false); // Cambiado a false inicialmente
+  // Estados locales simples
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showLowStock, setShowLowStock] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [barcode, setBarcode] = useState('');
-  const [loadingData, setLoadingData] = useState(false);
-  const [loadingStatus, setLoadingStatus] = useState('');
+  // Eliminado barcode search
   const [editStockModal, setEditStockModal] = useState<{ open: boolean; product: Product | null }>({ open: false, product: null });
   const [isSaving, setIsSaving] = useState(false);
 
+  // Función para cargar datos
+  const loadData = useCallback(async () => {
+    if (!currentBusiness?.id || !user?.id) return;
+    
+    setLoading(true);
+    try {
+      const [productsData, categoriesData] = await Promise.all([
+        getProducts(currentBusiness.id),
+        getCategories()
+      ]);
+      
+      setProducts(productsData);
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast.error('Error al cargar datos');
+    } finally {
+      setLoading(false);
+    }
+  }, [currentBusiness?.id, user?.id]);
+
   // Función para manejar el guardado del modal
   const handleModalSave = useCallback(async (form: { stock: number; min_stock: number; price: number; cost: number }) => {
-    // console.log('🔧 handleModalSave called:', { form, product: editStockModal.product, isSaving });
-    
-    if (isSaving) {
-      // console.log('⚠️ Already saving, ignoring request');
-      return;
-    }
-    
-    if (!editStockModal.product) {
-      console.error('❌ No product in modal state');
-      toast.error('Error: No hay producto seleccionado');
-      return;
-    }
+    if (isSaving || !editStockModal.product) return;
     
     setIsSaving(true);
-    
-    // Helper: timeout
-    const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> => {
-      return new Promise<T>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
-        p.then((v) => { clearTimeout(timer); resolve(v); })
-         .catch((e) => { clearTimeout(timer); reject(e); });
-      });
-    };
-
-    // Guardar valores previos por si hay que revertir
     const previousProduct = editStockModal.product;
 
     try {
-      // console.log('🔄 Updating product in cache (optimistic)...');
+      // Actualizar producto localmente primero
       const updatedProduct = {
         ...editStockModal.product,
         stock: Number(form.stock),
@@ -97,159 +71,48 @@ export default function Inventory() {
         price: Number(form.price),
         cost: Number(form.cost),
       };
-      updateProductInCache(updatedProduct);
+      setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
 
-      // Confirmar en Supabase con reintentos
-      // console.log('🔄 Saving to Supabase with retries...');
-      const trySave = async () => {
-        const res = await withTimeout(
-          updateProduct(
-            previousProduct.id,
-            {
-              stock: Number(form.stock),
-              min_stock: Number(form.min_stock),
-              price: Number(form.price),
-              cost: Number(form.cost),
-            },
-            previousProduct.user_id || '',
-            currentBusiness?.id || null
-          ),
-          10000
-        );
-        return res;
-      };
-
-      let res: any;
-      let attempt = 0;
-      let lastErr: any = null;
-      while (attempt < 3) {
-        try {
-          attempt += 1;
-          res = await trySave();
-          if (res?.success) break;
-          lastErr = res?.error || 'Unknown error';
-        } catch (e) {
-          lastErr = e;
-        }
-        await new Promise(r => setTimeout(r, 500 * attempt));
-      }
+      // Confirmar en Supabase
+      const res = await updateProduct(
+        previousProduct.id,
+        {
+          stock: Number(form.stock),
+          min_stock: Number(form.min_stock),
+          price: Number(form.price),
+          cost: Number(form.cost),
+        },
+        previousProduct.user_id || '',
+        currentBusiness?.id || null
+      );
 
       if (res?.success) {
-        // Si el backend devolvió el producto (con updated_at / triggers), actualizar cache con esos datos
-        if (res.data) {
-          updateProductInCache({ ...previousProduct, ...res.data });
-        }
-        if (currentBusiness?.id && user?.id) {
-          try {
-            localStorage.setItem(`inv-last-change-${currentBusiness.id}`, Date.now().toString());
-          } catch {}
-          // BroadcastChannel local inmediato
-          try {
-            const bc = new BroadcastChannel('inv-sync');
-            bc.postMessage({ type: 'inventory_updated', businessId: currentBusiness.id });
-            setTimeout(() => { try { bc.close(); } catch {} }, 500);
-          } catch {}
-          // (Opcional) refresh local para asegurar consistencia si había triggers que cambian otros campos
-          // refreshProducts(currentBusiness.id, user.id); // Deshabilitado para depender de realtime y evitar cargas duplicadas
-          try {
-            const registry: any = (window as any).__invChannels ||= {};
-            // Canal dedicado
-            const invChanName = `inv-broadcast-${currentBusiness.id}`;
-            let invChannel = registry[invChanName];
-            if (!invChannel) {
-              invChannel = supabase.channel(invChanName);
-              registry[invChanName] = invChannel;
-              await invChannel.subscribe();
-            }
-            // Canal compartido que el dashboard ya escucha (biz-<id>)
-            const bizChanName = `biz-${currentBusiness.id}`;
-            let bizChannel = registry[bizChanName];
-            if (!bizChannel) {
-              bizChannel = supabase.channel(bizChanName);
-              registry[bizChanName] = bizChannel;
-              await bizChannel.subscribe();
-            }
-            const payload = { type: 'broadcast', event: 'inventory_updated', payload: { businessId: currentBusiness.id } } as any;
-            await Promise.all([
-              invChannel.send(payload).catch(() => {}),
-              bizChannel.send(payload).catch(() => {})
-            ]);
-          } catch (e) {
-            // Silencioso: si falla broadcast no bloquea el update
-          }
-        }
         toast.success('Producto actualizado');
         setEditStockModal({ open: false, product: null });
       } else {
-        console.error('❌ Save failed:', lastErr);
-        // Revertir cambios en cache si falla confirmación
-        updateProductInCache(previousProduct);
-        toast.error('No se pudo guardar en el servidor. Intenta nuevamente.');
+        // Revertir cambios locales si falla
+        setProducts(prev => prev.map(p => p.id === previousProduct.id ? previousProduct : p));
+        toast.error('No se pudo guardar en el servidor');
       }
     } catch (error: any) {
-      console.error('❌ Error updating product:', error);
-      updateProductInCache(previousProduct);
+      console.error('Error updating product:', error);
+      setProducts(prev => prev.map(p => p.id === previousProduct.id ? previousProduct : p));
       toast.error('Error al actualizar el producto');
     } finally {
       setIsSaving(false);
     }
-  }, [editStockModal.product, updateProductInCache, updateProduct, isSaving, currentBusiness?.id, user?.id]);
+  }, [editStockModal.product, isSaving, currentBusiness?.id]);
 
-  // Debug logs (DUPLICADO - comentado)
-  // console.log('🔍 Inventory Debug:', {
-  //   productsLoading,
-  //   productsCount: products.length,
-  //   categoriesLoading,
-  //   categoriesCount: categories.length,
-  //   user: !!user,
-  //   currentBusiness: !!currentBusiness
-  // });
-
-  // Cargar datos iniciales solo una vez + retry si vienen vacíos
-  const initialLoadDone = useRef(false);
-  const retryAttemptsRef = useRef(0);
-  const hasLoadedOnce = useRef(false); // Evita volver al spinner después de tener datos
-  const lastRefreshRef = useRef(0); // Último momento en que se aceptó una carga/refresh
-
-  // Marcar cuando ya tenemos datos (primera vez)
-  useEffect(() => {
-    if (products.length > 0) {
-      hasLoadedOnce.current = true;
-      lastRefreshRef.current = Date.now();
-    }
-  }, [products.length]);
+  // Cargar datos al montar el componente
   useEffect(() => {
     if (!user) {
       router.push('/login');
       return;
     }
-    if (!currentBusiness?.id || !user?.id) return;
-
-    const attemptLoad = (force = false) => {
-      if (!initialLoadDone.current || force) {
-        initialLoadDone.current = true;
-        loadProducts(currentBusiness.id!, user.id!, force);
-        loadCategories();
-      }
-    };
-
-    // Primera carga
-    attemptLoad(false);
-
-    // Retry progresivo si productos siguen vacíos (hasta 3 veces)
-    if (products.length === 0 && retryAttemptsRef.current < 3) {
-      const timeout = setTimeout(() => {
-        if (products.length === 0 && currentBusiness?.id && user?.id) {
-          retryAttemptsRef.current += 1;
-          attemptLoad(true);
-        }
-      }, 1500 * (retryAttemptsRef.current + 1));
-      return () => clearTimeout(timeout);
+    if (currentBusiness?.id && user?.id) {
+      loadData();
     }
-  }, [user?.id, currentBusiness?.id, products.length]);
-
-  // DESACTIVADO: refresco por visibilidad temporalmente para aislar causa de loading infinito
-  // useEffect(() => { ... })
+  }, [user, currentBusiness?.id, user?.id, loadData, router]);
 
   const handleDeleteProduct = async (productId: string) => {
     if (!confirm('¿Estás seguro de que quieres eliminar este producto?')) {
@@ -259,7 +122,7 @@ export default function Inventory() {
     try {
       const success = await deleteProduct(productId);
       if (success) {
-        removeProductFromCache(productId);
+        setProducts(prev => prev.filter(p => p.id !== productId));
         toast.success('Producto eliminado correctamente');
       } else {
         toast.error('Error al eliminar el producto');
@@ -318,29 +181,13 @@ export default function Inventory() {
   const lowStockCount = products.filter(p => p.stock <= p.min_stock).length;
   const outOfStockCount = products.filter(p => p.stock === 0).length;
 
-  // Debug logs (DUPLICADO - comentado)
-  // console.log('🔍 Inventory Debug:', {
-  //   productsLoading,
-  //   productsCount: products.length,
-  //   categoriesLoading,
-  //   categoriesCount: categories.length,
-  //   user: !!user,
-  //   currentBusiness: !!currentBusiness
-  // });
-
-  // DESACTIVADO intervalo automático para evitar interferencias durante diagnóstico
-  // useRobustInterval(() => { ... })
-
-  // Mostrar spinner SOLO si todavía no hemos cargado nada nunca
-  if (!hasLoadedOnce.current && productsLoading && products.length === 0) {
+  // Mostrar spinner solo si está cargando y no hay productos
+  if (loading && products.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <LoadingSpinner size="lg" />
           <p className="text-gray-600 mt-4 mb-2">Cargando inventario...</p>
-          {loadingStatus && (
-            <p className="text-sm text-gray-500">{loadingStatus}</p>
-          )}
         </div>
       </div>
     );
@@ -348,34 +195,7 @@ export default function Inventory() {
 
   return (
     <SecurityGuard>
-        {/* Indicador de carga en la parte superior */}
-        {loadingStatus && (
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
-            <div className="flex items-center">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-3"></div>
-              <p className="text-blue-700 text-sm">{loadingStatus}</p>
-            </div>
-          </div>
-        )}
-        
-        <div className="w-full max-w-8xl mx-auto px-3 md:px-4 lg:px-4 space-y-5">
-        {/* Barra debug temporal */}
-        <div className="text-xs bg-gray-100 border border-gray-200 rounded p-2 flex flex-wrap gap-3">
-          <span>debug: productos={products.length}</span>
-          <span>loading={String(productsLoading)}</span>
-          <span>hasLoadedOnce={String(hasLoadedOnce.current)}</span>
-          <span>lastRefresh={(lastRefreshRef.current && new Date(lastRefreshRef.current).toLocaleTimeString()) || '-'}</span>
-          {productsError && <span className="text-red-600">error={productsError}</span>}
-          <button
-            onClick={() => {
-              if (currentBusiness?.id && user?.id) {
-                lastRefreshRef.current = Date.now();
-                refreshProducts(currentBusiness.id, user.id);
-              }
-            }}
-            className="px-2 py-1 bg-blue-600 text-white rounded"
-          >Recargar</button>
-        </div>
+        <div className="w-full max-w-8xl mx-auto px-3 md:px-4 lg:px-6 space-y-5">
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
@@ -383,48 +203,7 @@ export default function Inventory() {
             <p className="text-gray-600">Gestiona tus productos y stock</p>
           </div>
           <div className="flex gap-2">
-            <div className="hidden md:flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="Código de barras"
-                value={barcode}
-                onChange={(e) => setBarcode(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-              />
-              <Button
-                variant="outline"
-                disabled={importing || !barcode.trim()}
-                onClick={async () => {
-                  if (!user) return;
-                  try {
-                    setImporting(true);
-                    toast.loading('Buscando producto por código...', { id: 'off-barcode' });
-                    if (!currentBusiness?.id) {
-                      toast.error('Selecciona un negocio antes de importar');
-                      return;
-                    }
-                    const res = await importProductByBarcode(user.id, currentBusiness.id, barcode.trim());
-                    toast.dismiss('off-barcode');
-                    if (res.success) {
-                      toast.success('Producto importado');
-                      setBarcode('');
-                      if (currentBusiness?.id && user?.id) {
-                        await loadProducts(currentBusiness.id, user.id, true);
-                      }
-                    } else {
-                      toast.error(res.reason || 'No se pudo importar');
-                    }
-                  } catch {
-                    toast.dismiss('off-barcode');
-                    toast.error('Error al importar por código');
-                  } finally {
-                    setImporting(false);
-                  }
-                }}
-              >
-                Buscar por código
-              </Button>
-            </div>
+            {/* Input y botón de código de barras eliminados */}
             <Button 
               onClick={async () => {
                 if (!user) return;
@@ -437,42 +216,8 @@ export default function Inventory() {
               <Plus className="h-4 w-4 mr-2" />
               Agregar Producto
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => router.push('/inventory/aggregator')}
-              className="flex items-center space-x-2"
-            >
-              <Globe className="h-4 w-4" />
-              <span className="hidden md:inline">Agregador</span>
-            </Button>
-            <Button
-              variant="outline"
-              disabled={importing}
-              onClick={async () => {
-                if (!user) return;
-                try {
-                  setImporting(true);
-                  toast.loading('Importando productos desde OFF...', { id: 'off' });
-                  if (!currentBusiness?.id) {
-                    toast.error('Selecciona un negocio antes de importar');
-                    return;
-                  }
-                  const result = await importChileProducts(user.id, currentBusiness.id, 10);
-                  toast.dismiss('off');
-                  toast.success(`Importados: ${result.imported}, Omitidos: ${result.skipped}, Errores: ${result.errors}`);
-                  if (currentBusiness?.id && user?.id) {
-                    await loadProducts(currentBusiness.id, user.id, true);
-                  }
-                } catch {
-                  toast.dismiss('off');
-                  toast.error('Error al importar productos');
-                } finally {
-                  setImporting(false);
-                }
-              }}
-            >
-              Importar OFF (CL)
-            </Button>
+            {/* Agregador eliminado */}
+            {/* Botón Importar OFF (CL) eliminado */}
           </div>
         </div>
 
@@ -612,9 +357,9 @@ export default function Inventory() {
                 <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-500 mb-2">No se encontraron productos</p>
                 <p className="text-sm text-gray-400">
-                  {products.length === 0 && categories.length > 0 
-                    ? "La tabla de productos no existe o está vacía" 
-                    : "Agrega tu primer producto para comenzar"}
+                  {products.length === 0 
+                    ? "Agrega tu primer producto para comenzar" 
+                    : "No hay productos que coincidan con los filtros"}
                 </p>
               </div>
             ) : (

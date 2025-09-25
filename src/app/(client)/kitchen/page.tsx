@@ -9,7 +9,6 @@ import QuickStat from '@/components/ui/QuickStat';
 import { useAuth } from '@/contexts/AuthContext';
 import toast from 'react-hot-toast';
 import SecurityGuard from '@/components/SecurityGuard';
-import { useRobustInterval } from '@/hooks/useRobustInterval';
 
 interface KitchenOrder {
   id: string;
@@ -54,12 +53,14 @@ export default function KitchenPage() {
     loadKitchenOrders();
   }, []);
 
-  // Usar intervalo robusto que no se pausa en segundo plano
-  useRobustInterval(loadKitchenOrders, {
-    delay: 30000, // 30 segundos
-    enabled: true,
-    runOnMount: false // Ya se ejecutó en useEffect
-  });
+  // Intervalo simple para recargar órdenes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadKitchenOrders();
+    }, 30000); // 30 segundos
+
+    return () => clearInterval(interval);
+  }, [loadKitchenOrders]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-CL', {

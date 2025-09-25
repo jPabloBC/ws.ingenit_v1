@@ -3,16 +3,11 @@ import { useState, useEffect } from 'react';
 import { Calendar, Check, Crown, Package, X, Store } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
-import Layout from '@/components/layout/Layout';
-// Removido: import no usado
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscriptionService} from '@/services/supabase/subscriptions';
-// Removido: import no usado
 import toast from 'react-hot-toast';
-// Removido: import no usado
-import SecurityGuard from '@/components/SecurityGuard';
 
 export default function SubscriptionPage() {
   const router = useRouter();
@@ -120,20 +115,14 @@ export default function SubscriptionPage() {
 
   if (!user) {
     return (
-      <SecurityGuard>
-        <Layout>
-          <div className="flex items-center justify-center min-h-screen">
-            <LoadingSpinner />
-          </div>
-        </Layout>
-      </SecurityGuard>
+      <div className="flex items-center justify-center min-h-screen">
+        <LoadingSpinner />
+      </div>
     );
   }
 
   return (
-    <SecurityGuard>
-      <Layout>
-      <div className="p-6">
+    <div className="px-4 md:px-6">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Suscripción y Planes</h1>
@@ -344,8 +333,6 @@ export default function SubscriptionPage() {
             );
           })}
         </div>
-      </div>
-      </Layout>
-    </SecurityGuard>
+    </div>
   );
 } 

@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Crown, X, Home, Package, ShoppingCart, Users
 import { useRouter, usePathname } from 'next/navigation';
 // Removido: import no usado
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 
 interface Module {
   name: string;
@@ -48,6 +49,7 @@ const iconMap: { [key: string]: React.ComponentType<{ className?: string }> } = 
 };
 
 export default function Sidebar({ isOpen, onClose, storeConfig, isCollapsed = false, onToggleCollapse }: SidebarProps) {
+  const { currentBusiness } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
@@ -91,14 +93,14 @@ export default function Sidebar({ isOpen, onClose, storeConfig, isCollapsed = fa
             <div className={`flex flex-col ${isCollapsed ? 'items-center w-full' : ''}`}>
               {!isCollapsed && (
                 <>
-                  <h2 className="text-base md:text-lg font-semibold text-gray-900">{storeConfig.name}</h2>
-                  <p className="text-xs md:text-sm text-gray-500">{user?.email}</p>
+                  <h2 className="text-base md:text-lg font-semibold text-gray-900">{currentBusiness?.name || storeConfig.name}</h2>
+                  <p className="text-xs md:text-sm text-gray-500">{currentBusiness?.email || user?.email}</p>
                 </>
               )}
               {isCollapsed && (
                 <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                   <span className="text-white font-bold text-sm">
-                    {storeConfig.name.charAt(0)}
+                    {(currentBusiness?.name || storeConfig.name).charAt(0)}
                   </span>
                 </div>
               )}

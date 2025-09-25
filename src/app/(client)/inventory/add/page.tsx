@@ -388,7 +388,7 @@ export default function AddProductPage() {
   }
 
   return (
-      <div className="p-6">
+      <div className="px-4 md:px-6">
         <div className="mb-6">
           <Button
             onClick={() => router.back()}

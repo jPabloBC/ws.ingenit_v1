@@ -2,7 +2,6 @@
 import { usePathname } from 'next/navigation';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { StoreProvider } from '@/contexts/StoreContext';
-import AdminRouteGuard from '@/components/admin/AdminRouteGuard';
 
 interface ConditionalProvidersProps {
   children: React.ReactNode;
@@ -41,9 +40,7 @@ export default function ConditionalProviders({ children }: ConditionalProvidersP
   return (
     <AuthProvider>
       <StoreProvider>
-        <AdminRouteGuard>
-          {children}
-        </AdminRouteGuard>
+        {children}
       </StoreProvider>
     </AuthProvider>
   );
